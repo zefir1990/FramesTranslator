@@ -69,11 +69,12 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4],
+  "verboseMode": true
 }
 ```
 
-`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`, which is the selected source. A pixel matches when its color equals any configured color in the respective array. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
+`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`, which is the selected source. A pixel matches when its color equals any configured color in the respective array. `verboseMode` defaults to `true`; when enabled, the interactive application prints the detected frame count in green at the top-left corner. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 

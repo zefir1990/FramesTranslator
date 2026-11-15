@@ -25,6 +25,8 @@ const MAXIMUM_WINDOW_HEIGHT: u32 = 900;
 const MAXIMUM_WINDOW_SCALE: u32 = 4;
 const TEXT_PADDING: f32 = 2.0;
 const EMPTY_STATE_MESSAGE: &str = "Drag and drop an image here";
+const VERBOSE_TEXT_POSITION: (f32, f32) = (2.0, 2.0);
+const VERBOSE_TEXT_COLOR: Color = Color::RGB(0, 255, 0);
 const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
 
 pub fn run(
@@ -50,10 +52,14 @@ pub fn run(
             .window_mut()
             .set_title(&format!("{WINDOW_TITLE} - {image_path}"))
             .map_err(sdl_error)?;
-        show_scene(&mut canvas, &loaded_scene)?;
+        show_scene(
+            &mut canvas,
+            &loaded_scene,
+            application_config.verbose_mode(),
+        )?;
         scene = Some(loaded_scene);
     } else {
-        draw_empty_state(&mut canvas)?;
+        draw_empty_state(&mut canvas, application_config.verbose_mode())?;
     }
     loop {
         let mut redraw = false;
@@ -100,8 +106,10 @@ pub fn run(
         }
         if redraw {
             match &scene {
-                Some(loaded_scene) => show_scene(&mut canvas, loaded_scene)?,
-                None => draw_empty_state(&mut canvas)?,
+                Some(loaded_scene) => {
+                    show_scene(&mut canvas, loaded_scene, application_config.verbose_mode())?
+                }
+                None => draw_empty_state(&mut canvas, application_config.verbose_mode())?,
             }
         }
         thread::sleep(EVENT_POLL_DELAY);
@@ -148,7 +156,11 @@ fn load_scene(
     })
 }
 
-fn show_scene(canvas: &mut Canvas<Window>, scene: &Scene) -> Result<(), ApplicationError> {
+fn show_scene(
+    canvas: &mut Canvas<Window>,
+    scene: &Scene,
+    verbose_mode: bool,
+) -> Result<(), ApplicationError> {
     let (image_width, image_height) = scene.image.dimensions();
     canvas
         .window_mut()
@@ -171,6 +183,9 @@ fn show_scene(canvas: &mut Canvas<Window>, scene: &Scene) -> Result<(), Applicat
     canvas.clear();
     canvas.copy(&texture, None, None).map_err(sdl_error)?;
     draw_overlays(canvas, &scene.overlays)?;
+    if verbose_mode {
+        draw_frame_count(canvas, scene.overlays.len())?;
+    }
     canvas.present();
     Ok(())
 }
@@ -210,7 +225,10 @@ fn draw_overlays(
     Ok(())
 }
 
-fn draw_empty_state(canvas: &mut Canvas<Window>) -> Result<(), ApplicationError> {
+fn draw_empty_state(
+    canvas: &mut Canvas<Window>,
+    verbose_mode: bool,
+) -> Result<(), ApplicationError> {
     canvas
         .window_mut()
         .set_size(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT)
@@ -218,11 +236,29 @@ fn draw_empty_state(canvas: &mut Canvas<Window>) -> Result<(), ApplicationError>
     canvas.set_scale(1.0, 1.0).map_err(sdl_error)?;
     canvas.set_draw_color(Color::RGB(24, 24, 24));
     canvas.clear();
+    if verbose_mode {
+        draw_frame_count(canvas, 0)?;
+    }
     canvas.set_draw_color(Color::RGB(230, 230, 230));
     canvas
         .draw_debug_text(EMPTY_STATE_MESSAGE, (20.0, 20.0))
         .map_err(sdl_error)?;
     canvas.present();
+    Ok(())
+}
+
+fn draw_frame_count(
+    canvas: &mut Canvas<Window>,
+    frame_count: usize,
+) -> Result<(), ApplicationError> {
+    canvas.set_scale(1.0, 1.0).map_err(sdl_error)?;
+    canvas.set_draw_color(VERBOSE_TEXT_COLOR);
+    canvas
+        .draw_debug_text(
+            &format!("Frames detected: {frame_count}"),
+            VERBOSE_TEXT_POSITION,
+        )
+        .map_err(sdl_error)?;
     Ok(())
 }
 

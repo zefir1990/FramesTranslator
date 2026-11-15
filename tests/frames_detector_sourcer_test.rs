@@ -75,6 +75,7 @@ fn factory_creates_frames_detector_sourcer_from_application_config() -> Result<(
         "SdlThreeTextRenderer",
         vec![BACKGROUND_COLOR],
         vec![TEXT_COLOR],
+        true,
     );
     let mut frames_sourcer = create_frames_sourcer(&application_config)?;
     let mut frame_count = 0;

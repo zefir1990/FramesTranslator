@@ -9,6 +9,8 @@ pub struct ApplicationConfig {
     text_renderer: String,
     frames_detection_background_colors: Vec<u32>,
     frames_detection_text_colors: Vec<u32>,
+    #[serde(default = "default_verbose_mode")]
+    verbose_mode: bool,
 }
 
 impl ApplicationConfig {
@@ -19,6 +21,7 @@ impl ApplicationConfig {
         text_renderer: impl Into<String>,
         frames_detection_background_colors: Vec<u32>,
         frames_detection_text_colors: Vec<u32>,
+        verbose_mode: bool,
     ) -> Self {
         Self {
             frames_sourcer: frames_sourcer.into(),
@@ -27,6 +30,7 @@ impl ApplicationConfig {
             text_renderer: text_renderer.into(),
             frames_detection_background_colors,
             frames_detection_text_colors,
+            verbose_mode,
         }
     }
 
@@ -54,6 +58,10 @@ impl ApplicationConfig {
         &self.frames_detection_text_colors
     }
 
+    pub fn verbose_mode(&self) -> bool {
+        self.verbose_mode
+    }
+
     pub fn from_jsonc(source: &str) -> Result<Self, json5::Error> {
         json5::from_str(source)
     }
@@ -61,6 +69,10 @@ impl ApplicationConfig {
     pub fn to_jsonc(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
+}
+
+fn default_verbose_mode() -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -76,6 +88,7 @@ mod tests {
             "BlockTextRenderer",
             vec![0x000000],
             vec![0xFCFCFC, 0xFFFFFF, 0xFCFCB4],
+            true,
         );
         assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
         assert_eq!(application_config.frames_ocr(), "FixtureFramesOCR");
@@ -92,5 +105,22 @@ mod tests {
             application_config.frames_detection_text_colors(),
             [0xFCFCFC, 0xFFFFFF, 0xFCFCB4]
         );
+        assert!(application_config.verbose_mode());
+    }
+
+    #[test]
+    fn verbose_mode_defaults_to_true_when_missing() {
+        let application_config = ApplicationConfig::from_jsonc(
+            r#"{
+                "framesSourcer": "FramesDetectorSourcer",
+                "framesOcr": "MangaFramesOCR",
+                "textTranslator": "ArgosTextTranslator",
+                "textRenderer": "SdlThreeTextRenderer",
+                "framesDetectionBackgroundColors": [0x000000],
+                "framesDetectionTextColors": [0xFFFFFF]
+            }"#,
+        )
+        .unwrap();
+        assert!(application_config.verbose_mode());
     }
 }

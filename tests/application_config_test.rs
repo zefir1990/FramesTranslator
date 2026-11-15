@@ -23,6 +23,7 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
         application_config.frames_detection_text_colors(),
         [0xFCFCFC, 0xFFFFFF, 0xFCFCB4]
     );
+    assert!(application_config.verbose_mode());
     let serialized = application_config.to_jsonc()?;
     let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;
     for key in [
@@ -32,9 +33,11 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
         "textRenderer",
         "framesDetectionBackgroundColors",
         "framesDetectionTextColors",
+        "verboseMode",
     ] {
         assert!(serialized_value.get(key).is_some());
     }
+    assert_eq!(serialized_value["verboseMode"], true);
     let restored = ApplicationConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, application_config);
     Ok(())

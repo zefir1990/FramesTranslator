@@ -132,7 +132,8 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4],
+  "verboseMode": true
 }
 ```
 
@@ -227,7 +228,10 @@ For each `Event::DropFile`, the application:
 2. Calls `FramesDetectorSourcer::detect`, which returns `DetectedFrame` values with both the cropped frame and its original bounds.
 3. Runs `FramesOCR::recognize` and `TextTranslator::translate_all` for each detected frame.
 4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines at the corresponding region offsets.
-5. Presents the result and waits for another drop, `Escape`, or window close.
+5. When `verboseMode` is enabled, draws `Frames detected: N` in green at the top-left corner in screen coordinates.
+6. Presents the result and waits for another drop, `Escape`, or window close.
+
+`verboseMode` is a `bool` configuration field that defaults to `true` when omitted, so existing configuration files do not need the key.
 
 The display scale is chosen to fit `1280x900` while preserving aspect ratio, capped at `4`. `DetectedFrame` exposes the bounds needed for in-place placement; the `FramesSourcer` contract still yields only frames for pipeline callers.
 

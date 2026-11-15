@@ -56,11 +56,12 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4],
+  "verboseMode": true
 }
 ```
 
-`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. A frame matches when its background pixels use any configured background color and its text pixels use any configured text color. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
+`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. A frame matches when its background pixels use any configured background color and its text pixels use any configured text color. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. `verboseMode` defaults to `true`; when enabled, the interactive window prints the detected frame count in green at the top-left corner. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
 Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, and a `shadowrun_street` case for the Shibuya street dialog box. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
@@ -72,6 +73,7 @@ The `FramesTranslator` executable opens an SDL3 window that accepts image files 
 2. Detects text frames using the configured background and text color arrays.
 3. Recognizes and translates each detected frame.
 4. Replaces each frame in place with its translations.
+5. In verbose mode, shows the detected frame count in green at the top-left corner.
 
 Drop another image to process it again; press `Escape` or close the window to exit. A file path may also be passed as the first command-line argument to open an image immediately:
 
