@@ -8,6 +8,7 @@ use sdl3::keyboard::Keycode;
 use sdl3::pixels::{Color, PixelFormat};
 use sdl3::render::FRect;
 
+use crate::debug_text::DebugTextLayout;
 use crate::frame::Frame;
 use crate::frames_config::NamedRect;
 use crate::tests_config::TestsConfig;
@@ -17,7 +18,7 @@ use crate::text_renderer::{RenderingError, TextRenderer};
 const DEFAULT_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
 const DEFAULT_TESTS_CONFIG_PATH: &str = "test-case/tests-config.jsonc";
 const DEFAULT_WINDOW_SCALE: u32 = 4;
-const TEXT_PADDING: f32 = 2.0;
+const TRANSLATED_TEXT_COLOR: Color = Color::RGB(255, 255, 255);
 const FRAME_DELAY: Duration = Duration::from_millis(16);
 
 pub struct SdlThreeTextRenderer {
@@ -118,23 +119,17 @@ impl TextRenderer for SdlThreeTextRenderer {
                     "failed to draw black frame background: {error}"
                 ))
             })?;
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        for translated_text in translated_texts {
-            let bounds = translated_text.source_region().bounds();
-            canvas
-                .draw_debug_text(
-                    translated_text.text(),
-                    (
-                        placement.x() as f32 + bounds.x() as f32 + TEXT_PADDING,
-                        placement.y() as f32 + bounds.y() as f32 + TEXT_PADDING,
-                    ),
-                )
-                .map_err(|error| {
-                    RenderingError::RenderingFailed(format!(
-                        "failed to draw translated text: {error}"
-                    ))
-                })?;
-        }
+        let layout = DebugTextLayout::for_translated_texts(translated_texts, placement);
+        layout
+            .draw(
+                &mut canvas,
+                (placement.x() as f32, placement.y() as f32),
+                self.window_scale as f32,
+                TRANSLATED_TEXT_COLOR,
+            )
+            .map_err(|error| {
+                RenderingError::RenderingFailed(format!("failed to draw translated text: {error}"))
+            })?;
         canvas.present();
         let timeout = Duration::from_secs(tests_config.shadowrun_cd().timeout_seconds());
         wait_for_window_close(&sdl_context, timeout)?;

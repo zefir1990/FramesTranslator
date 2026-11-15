@@ -1,4 +1,5 @@
 pub mod application_config;
+pub mod debug_text;
 pub mod factory;
 pub mod frame;
 pub mod frame_translation;
@@ -13,6 +14,7 @@ pub mod text_renderer;
 pub mod text_translator;
 
 pub use application_config::ApplicationConfig;
+pub use debug_text::DebugTextLayout;
 pub use factory::{
     FactoryError, create_frames_detector_sourcer, create_frames_ocr, create_frames_sourcer,
     create_text_renderer, create_text_translator,

@@ -10,7 +10,7 @@ use super::python_worker::{PythonWorker, TemporaryImage, manifest_path};
 const PYTHON_EXECUTABLE_PATH: &str = ".venv/Scripts/python.exe";
 const OCR_SCRIPT_PATH: &str = "scripts/manga_ocr_worker.py";
 const READY_RESPONSE: &str = "READY";
-const INK_LUMINANCE_THRESHOLD: u32 = 160;
+const INK_LUMINANCE_DIFFERENCE_THRESHOLD: u32 = 160;
 const LINE_VERTICAL_PADDING: u32 = 1;
 const LINE_HORIZONTAL_PADDING: u32 = 8;
 const MINIMUM_LINE_HEIGHT: u32 = 4;
@@ -79,18 +79,27 @@ impl FramesOCR for MangaFramesOCR {
 }
 
 fn detect_text_lines(frame: &Frame) -> Vec<Bounds> {
-    let inked_rows: Vec<bool> = (0..frame.height()).map(|y| row_has_ink(frame, y)).collect();
+    let background_luminance = background_luminance(frame);
+    let inked_rows: Vec<bool> = (0..frame.height())
+        .map(|y| row_has_ink(frame, y, background_luminance))
+        .collect();
     let mut lines = Vec::new();
     let mut line_start = None;
     for y in 0..frame.height() {
         if inked_rows[y as usize] {
             line_start.get_or_insert(y);
         } else if let Some(start) = line_start.take() {
-            push_line(&mut lines, frame, start, y);
+            push_line(&mut lines, frame, start, y, background_luminance);
         }
     }
     if let Some(start) = line_start {
-        push_line(&mut lines, frame, start, frame.height());
+        push_line(
+            &mut lines,
+            frame,
+            start,
+            frame.height(),
+            background_luminance,
+        );
     }
     if lines.is_empty() {
         return vec![Bounds::new(0, 0, frame.width(), frame.height())];
@@ -98,25 +107,48 @@ fn detect_text_lines(frame: &Frame) -> Vec<Bounds> {
     lines
 }
 
-fn row_has_ink(frame: &Frame, y: u32) -> bool {
+fn background_luminance(frame: &Frame) -> u32 {
+    let mut histogram = [0usize; 256];
+    for pixel in frame.rgba_pixels().as_chunks::<CHANNELS_PER_PIXEL>().0 {
+        histogram[pixel_luminance(pixel) as usize] += 1;
+    }
+    histogram
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, count)| **count)
+        .map(|(luminance, _)| luminance as u32)
+        .unwrap_or(0)
+}
+
+fn row_has_ink(frame: &Frame, y: u32, background_luminance: u32) -> bool {
     let row_length = frame.width() as usize * CHANNELS_PER_PIXEL;
     let row_start = y as usize * row_length;
     frame.rgba_pixels()[row_start..row_start + row_length]
         .as_chunks::<CHANNELS_PER_PIXEL>()
         .0
         .iter()
-        .any(|pixel| pixel_luminance(pixel) >= INK_LUMINANCE_THRESHOLD)
+        .any(|pixel| {
+            pixel_luminance(pixel).abs_diff(background_luminance)
+                >= INK_LUMINANCE_DIFFERENCE_THRESHOLD
+        })
 }
 
 fn pixel_luminance(pixel: &[u8]) -> u32 {
     (pixel[0] as u32 * 299 + pixel[1] as u32 * 587 + pixel[2] as u32 * 114) / 1000
 }
 
-fn push_line(lines: &mut Vec<Bounds>, frame: &Frame, start: u32, end: u32) {
+fn push_line(
+    lines: &mut Vec<Bounds>,
+    frame: &Frame,
+    start: u32,
+    end: u32,
+    background_luminance: u32,
+) {
     if end - start < MINIMUM_LINE_HEIGHT {
         return;
     }
-    let Some((ink_start, ink_end)) = horizontal_ink_extent(frame, start, end) else {
+    let Some((ink_start, ink_end)) = horizontal_ink_extent(frame, start, end, background_luminance)
+    else {
         return;
     };
     let padded_start_y = start.saturating_sub(LINE_VERTICAL_PADDING);
@@ -134,7 +166,12 @@ fn push_line(lines: &mut Vec<Bounds>, frame: &Frame, start: u32, end: u32) {
     ));
 }
 
-fn horizontal_ink_extent(frame: &Frame, start_y: u32, end_y: u32) -> Option<(u32, u32)> {
+fn horizontal_ink_extent(
+    frame: &Frame,
+    start_y: u32,
+    end_y: u32,
+    background_luminance: u32,
+) -> Option<(u32, u32)> {
     let row_length = frame.width() as usize * CHANNELS_PER_PIXEL;
     let mut minimum_x = frame.width();
     let mut maximum_x = 0;
@@ -143,7 +180,9 @@ fn horizontal_ink_extent(frame: &Frame, start_y: u32, end_y: u32) -> Option<(u32
         let row_start = y as usize * row_length;
         let row = &frame.rgba_pixels()[row_start..row_start + row_length];
         for (x, pixel) in row.as_chunks::<CHANNELS_PER_PIXEL>().0.iter().enumerate() {
-            if pixel_luminance(pixel) >= INK_LUMINANCE_THRESHOLD {
+            if pixel_luminance(pixel).abs_diff(background_luminance)
+                >= INK_LUMINANCE_DIFFERENCE_THRESHOLD
+            {
                 minimum_x = minimum_x.min(x as u32);
                 maximum_x = maximum_x.max(x as u32);
                 ink_found = true;
@@ -226,18 +265,43 @@ mod tests {
     }
 
     #[test]
-    fn detects_four_text_lines() {
-        let width = 4;
-        let height = 24;
-        let mut rgba_pixels = vec![0; width as usize * height as usize * CHANNELS_PER_PIXEL];
-        for y in [1, 2, 3, 4, 7, 8, 9, 10, 13, 14, 15, 16, 19, 20, 21, 22] {
-            for x in 0..width {
-                let offset = (y as usize * width as usize + x as usize) * CHANNELS_PER_PIXEL;
-                rgba_pixels[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
-            }
-        }
-        let frame = Frame::new("test", width, height, rgba_pixels).unwrap();
+    fn detects_four_text_lines_on_a_dark_background() {
+        let frame = frame_with_text_rows(
+            36,
+            0,
+            &[1, 2, 3, 4, 10, 11, 12, 13, 19, 20, 21, 22, 28, 29, 30, 31],
+        );
         let lines = detect_text_lines(&frame);
         assert_eq!(lines.len(), 4);
+    }
+
+    #[test]
+    fn detects_four_text_lines_on_a_light_background() {
+        let frame = frame_with_text_rows(
+            40,
+            255,
+            &[1, 2, 3, 4, 11, 12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 34],
+        );
+        let lines = detect_text_lines(&frame);
+        assert_eq!(lines.len(), 4);
+    }
+
+    fn frame_with_text_rows(height: u32, background_luminance: u8, text_rows: &[u32]) -> Frame {
+        let width = 4;
+        let text_luminance = 255 - background_luminance;
+        let mut rgba_pixels =
+            vec![background_luminance; width as usize * height as usize * CHANNELS_PER_PIXEL];
+        for y in text_rows {
+            for x in 0..width {
+                let offset = (*y as usize * width as usize + x as usize) * CHANNELS_PER_PIXEL;
+                rgba_pixels[offset..offset + 4].copy_from_slice(&[
+                    text_luminance,
+                    text_luminance,
+                    text_luminance,
+                    255,
+                ]);
+            }
+        }
+        Frame::new("test", width, height, rgba_pixels).unwrap()
     }
 }

@@ -46,6 +46,7 @@ flowchart LR
 | `src/tests_config.rs` | `TestsConfig` and per-test configuration structs |
 | `src/application_config.rs` | `ApplicationConfig` implementation selection and JSONC methods |
 | `src/text_region.rs` | `Bounds`, `TextRegion`, and `TranslatedText` |
+| `src/debug_text.rs` | Debug-font text wrapping, fitting, and drawing shared by renderers |
 | `src/frames_sourcer.rs` | `FramesSourcer` contract and `FrameSourceError` |
 | `src/frames_ocr.rs` | `FramesOCR` contract and `RecognitionError` |
 | `src/text_translator.rs` | `TextTranslator` contract and `TranslationError` |
@@ -254,7 +255,7 @@ For each `Event::DropFile`, the application:
 1. Decodes the dropped image into an RGBA image.
 2. Calls `detect` on the configured `FramesDetectorSourcer`, which returns `DetectedFrame` values with both the cropped frame and its original bounds.
 3. Runs `FramesOCR::recognize` for each detected frame. Wide dialog frames with at least three lines go through `translate_frame_regions`, which translates the combined text once and distributes the result across the original lines; other frames use `TextTranslator::translate_all` per line.
-4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines at the corresponding region offsets.
+4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines wrapped and scaled to stay inside the frame.
 5. When `verboseMode` is enabled, draws `Frames detected: N` in green at the top-left corner in screen coordinates.
 6. Presents the result and waits for another drop, `Escape`, or window close.
 
@@ -271,11 +272,11 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 | `NeuralNetworkFramesDetectorSourcer` | `FramesSourcer` | Proposes dominant-color regions and validates them with a local PyTorch structural classifier | Retrains per worker start; needs local PyTorch |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
-| `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines with horizontal ink padding and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
+| `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines with horizontal ink padding and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; background-relative line detection |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
 | `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
-| `SdlThreeTextRenderer` | `TextRenderer` | Shows `test-case/Shadowrun_02.png`, blacks out the configured frame, draws translated lines, and waits for the window to close | Uses SDL's ASCII debug font and requires a display |
+| `SdlThreeTextRenderer` | `TextRenderer` | Shows `test-case/Shadowrun_02.png`, blacks out the configured frame, draws translated lines fitted to the frame, and waits for the window to close | Uses SDL's ASCII debug font and requires a display |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled. `SdlThreeTextRenderer` uses vendored SDL3 3.4.20 libraries under `third-party/sdl3`; `build.rs` adds the import library path and copies `SDL3.dll` next to test and binary outputs.
 
@@ -283,7 +284,9 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 
 `SdlThreeTextRenderer` resolves a frame placement by searching every test case in `tests-config.jsonc` and matching the configured frame name first. Detector-generated names do not match the descriptive names, so the renderer falls back to exact frame dimensions. Equal-sized detected frames resolve to the first configured match.
 
-`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line to its horizontal ink extent with vertical and horizontal padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
+`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It estimates the frame background luminance from the most frequent luminance, marks rows whose pixels differ from the background by at least `160`, and detects horizontal text lines for both dark and light panels. Each line is cropped to its horizontal ink extent with vertical and horizontal padding, encoded to a temporary PNG, and read from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
+
+`DebugTextLayout` in `src/debug_text.rs` places translated text using SDL's fixed `8x8` debug font. It wraps words to the frame width, keeps each source region's vertical offset when it does not overlap the previous row, stacks rows that would overlap, and reduces the glyph scale in fixed steps until the block fits the frame height. The interactive application and `SdlThreeTextRenderer` both draw through this layout, so translated text stays inside its frame even when the translation is longer than the original text.
 
 ```mermaid
 sequenceDiagram
@@ -340,9 +343,10 @@ Coverage includes:
 - color-based and color-free neural frame detection of both menu panels and the intro, street, hospital, and Banana dialog boxes, reading-order output, multi-color matching with tolerance for scaled gray text, structural candidate validation, detection thresholds, and invalid color rejection,
 - source termination,
 - exact per-frame OCR regions and frame containment,
-- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, `"Street Dialog"`, and `"Hospital Dialog"` text extraction,
+- Manga OCR protocol response parsing, dark and light background line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, `"Street Dialog"`, and `"Hospital Dialog"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
 - context-aware block translation and line distribution for wide multi-line dialogs,
+- debug text wrapping, vertical stacking, and glyph scaling to fit frame bounds,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
 - full Shadowrun intro, street, and hospital dialog detection to OCR to translation to block-rendering pipelines,
 - SDL preview timeout behavior,
@@ -391,7 +395,7 @@ Production backends will likely need additional design work:
 
 - OCR: a local OCR engine or an external service adapter.
 - Translation: a service adapter with credentials and rate-limit handling.
-- Rendering: glyph layout, font loading, text fitting, and background preservation.
+- Rendering: font loading, proportional glyph layout, and background preservation.
 - Source: video decoding, directory traversal, and frame timestamps.
 
 If backends require configurable paths, credentials, or tuning parameters, the configuration model should be extended deliberately rather than adding ad hoc file reads inside implementations.
@@ -400,7 +404,8 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 
 - `src/main.rs` runs an interactive SDL application; automated pipeline tests use `SdlThreeTextRenderer` directly.
 - OCR and translation use local Python models with model-dependent quality.
-- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
+- `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and fit translated text to the frame by wrapping and scaling.
 - The interactive application blocks its event loop while processing a dropped image.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.

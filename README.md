@@ -72,9 +72,9 @@ Test-case expectations are loaded from `test-case/tests-config.jsonc` through `T
 The `FramesTranslator` executable opens an SDL3 window that accepts image files by drag and drop. After a file is dropped, it:
 
 1. Loads the image.
-2. Detects text frames using the configured background and text color arrays.
+2. Detects text frames with the configured detector.
 3. Recognizes and translates each detected frame. Wide dialog frames with three or more lines are translated as one block so the lines keep their context, then the translation is distributed back across the original lines.
-4. Replaces each frame in place with its translations.
+4. Replaces each frame in place with its translations, wrapping and scaling long text so it stays inside the frame.
 5. In verbose mode, shows the detected frame count in green at the top-left corner.
 
 Drop another image to process it again; press `Escape` or close the window to exit. A file path may also be passed as the first command-line argument to open an image immediately:
@@ -121,6 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 build.rs                       Copies the vendored SDL3 DLL into target
 src/
   application_config.rs        ApplicationConfig JSONC loading
+  debug_text.rs                Debug-font text wrapping, fitting, and drawing
   factory.rs                   Class-name based implementation selection
   frame.rs                     Named RGBA frame model
   frame_translation.rs         Context-aware dialog translation and line distribution
@@ -174,7 +175,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, procedural and neural detection of both Shadowrun CD panels and the intro, street, hospital, and Banana dialog boxes, color-free neural detection of the beige `Banana_01.png` dialog, tolerant matching of scaled gray text, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, procedural and neural detection of both Shadowrun CD panels and the intro, street, hospital, and Banana dialog boxes, color-free neural detection of the beige `Banana_01.png` dialog, tolerant matching of scaled gray text, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction on dark and light backgrounds, per-frame batch translation, debug-font text wrapping and fitting, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

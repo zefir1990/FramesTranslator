@@ -48,6 +48,7 @@ Supporting modules:
 - `src/tests_config.rs`: `TestsConfig` with a separate config struct per test.
 - `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
+- `src/debug_text.rs`: debug-font text wrapping, fitting, and drawing used by both renderers.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
 - `src/main.rs`: interactive SDL application that processes dropped images.
 - `src/sdl_image_translator.rs`: drag-and-drop event loop and in-place translation overlays.
@@ -99,11 +100,11 @@ The selected detector uses `test-case/Shadowrun_02.png` when constructed through
 | `NeuralNetworkFramesDetectorSourcer` | Proposes dominant-color regions and validates them with a local PyTorch structural classifier |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
-| `MangaFramesOCR` | Splits frames into text lines with horizontal ink padding and runs Manga OCR per line through a persistent Python worker in `.venv` |
+| `MangaFramesOCR` | Splits frames into text lines using background-relative luminance, pads each line horizontally, and runs Manga OCR per line through a persistent Python worker in `.venv` |
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
 | `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
-| `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text in an SDL3 window until closed |
+| `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text fitted inside the detected frame in an SDL3 window until closed |
 
 These are development and test backends, not production implementations.
 
@@ -155,7 +156,8 @@ When adding an implementation:
 - `ProceduralFramesDetectorSourcer` matches background and text colors within fixed channel tolerances and uses fixed minimum size and density thresholds.
 - `NeuralNetworkFramesDetectorSourcer` retrains a small PyTorch structural classifier when each worker starts and uses image-derived dominant colors only for region proposals.
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
-- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
+- `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
 - The application processes each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
 - PNG only.
 - Synchronous, single-threaded processing.

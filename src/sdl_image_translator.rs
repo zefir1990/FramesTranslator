@@ -11,11 +11,12 @@ use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
 
 use frames_translator::application_config::ApplicationConfig;
+use frames_translator::debug_text::DebugTextLayout;
 use frames_translator::frame_translation::translate_frame_regions;
 use frames_translator::frames_detector_sourcer::FramesDetectorSourcer;
 use frames_translator::frames_ocr::{FramesOCR, RecognitionError};
 use frames_translator::frames_sourcer::FrameSourceError;
-use frames_translator::text_region::{Bounds, TranslatedText};
+use frames_translator::text_region::Bounds;
 use frames_translator::text_translator::{TextTranslator, TranslationError};
 
 const WINDOW_TITLE: &str = "FramesTranslator";
@@ -24,10 +25,10 @@ const INITIAL_WINDOW_HEIGHT: u32 = 600;
 const MAXIMUM_WINDOW_WIDTH: u32 = 1280;
 const MAXIMUM_WINDOW_HEIGHT: u32 = 900;
 const MAXIMUM_WINDOW_SCALE: u32 = 4;
-const TEXT_PADDING: f32 = 2.0;
 const EMPTY_STATE_MESSAGE: &str = "Drag and drop an image here";
 const VERBOSE_TEXT_POSITION: (f32, f32) = (2.0, 2.0);
 const VERBOSE_TEXT_COLOR: Color = Color::RGB(0, 255, 0);
+const TRANSLATED_TEXT_COLOR: Color = Color::RGB(255, 255, 255);
 const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
 
 pub fn run(
@@ -126,7 +127,7 @@ struct Scene {
 
 struct FrameOverlay {
     bounds: Bounds,
-    translated_texts: Vec<TranslatedText>,
+    layout: DebugTextLayout,
 }
 
 fn load_scene(
@@ -142,9 +143,10 @@ fn load_scene(
         let regions = frames_ocr.recognize(detected_frame.frame())?;
         let translated_texts =
             translate_frame_regions(detected_frame.frame(), &regions, text_translator)?;
+        let bounds = detected_frame.bounds();
         overlays.push(FrameOverlay {
-            bounds: detected_frame.bounds(),
-            translated_texts,
+            bounds,
+            layout: DebugTextLayout::for_translated_texts(&translated_texts, bounds),
         });
     }
     let scale = display_scale(image.width(), image.height());
@@ -181,7 +183,7 @@ fn show_scene(
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     canvas.copy(&texture, None, None).map_err(sdl_error)?;
-    draw_overlays(canvas, &scene.overlays)?;
+    draw_overlays(canvas, &scene.overlays, scene.scale)?;
     if verbose_mode {
         draw_frame_count(canvas, scene.overlays.len())?;
     }
@@ -192,6 +194,7 @@ fn show_scene(
 fn draw_overlays(
     canvas: &mut Canvas<Window>,
     overlays: &[FrameOverlay],
+    scene_scale: u32,
 ) -> Result<(), ApplicationError> {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     for overlay in overlays {
@@ -205,21 +208,16 @@ fn draw_overlays(
             ))
             .map_err(sdl_error)?;
     }
-    canvas.set_draw_color(Color::RGB(255, 255, 255));
     for overlay in overlays {
-        let overlay_bounds = overlay.bounds;
-        for translated_text in &overlay.translated_texts {
-            let bounds = translated_text.source_region().bounds();
-            canvas
-                .draw_debug_text(
-                    translated_text.text(),
-                    (
-                        overlay_bounds.x() as f32 + bounds.x() as f32 + TEXT_PADDING,
-                        overlay_bounds.y() as f32 + bounds.y() as f32 + TEXT_PADDING,
-                    ),
-                )
-                .map_err(sdl_error)?;
-        }
+        overlay
+            .layout
+            .draw(
+                canvas,
+                (overlay.bounds.x() as f32, overlay.bounds.y() as f32),
+                scene_scale as f32,
+                TRANSLATED_TEXT_COLOR,
+            )
+            .map_err(sdl_error)?;
     }
     Ok(())
 }
