@@ -76,6 +76,24 @@ fn tests_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn Error>
         ["Shibuya", "A very nice city"],
     );
     assert_eq!(street.timeout_seconds(), 5);
+    let hospital = tests_config.shadowrun_hospital();
+    assert_eq!(hospital.frames().frames().len(), 1);
+    assert_eq!(hospital.frames().frames()[0].name(), "Hospital Dialog");
+    assert_eq!(
+        hospital.frames().frames()[0].rect(),
+        Bounds::new(39, 261, 411, 84)
+    );
+    assert_expected_texts(
+        hospital.expected_result_ocr(),
+        "Hospital Dialog",
+        ["おまえさんに", "尻をたたかれて", "やる気になったはいいが"],
+    );
+    assert_expected_texts(
+        hospital.expected_translation_result(),
+        "Hospital Dialog",
+        ["I'd like to", "be motivated by", "my wife."],
+    );
+    assert_eq!(hospital.timeout_seconds(), 5);
     let serialized = tests_config.to_jsonc()?;
     let restored = TestsConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, tests_config);

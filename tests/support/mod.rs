@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use frames_translator::application_config::ApplicationConfig;
 use frames_translator::frame::Frame;
+use frames_translator::frame_translation::translate_frame_regions;
 use frames_translator::frames_config::FramesConfig;
 use frames_translator::frames_ocr::FramesOCR;
 use frames_translator::frames_sourcer::FramesSourcer;
@@ -16,7 +17,6 @@ use frames_translator::implementations::{
 use frames_translator::tests_config::TestsConfig;
 use frames_translator::text_region::Bounds;
 use frames_translator::text_renderer::TextRenderer;
-use frames_translator::text_translator::TextTranslator;
 
 const APPLICATION_CONFIG_PATH: &str = "test-case/tests-application-config.jsonc";
 const TESTS_CONFIG_PATH: &str = "test-case/tests-config.jsonc";
@@ -71,7 +71,7 @@ pub fn assert_detected_frame_pipeline(
             assert!(region.bounds().right() <= frame.width());
             assert!(region.bounds().bottom() <= frame.height());
         }
-        let translated_texts = text_translator.translate_all(&regions)?;
+        let translated_texts = translate_frame_regions(&frame, &regions, &mut text_translator)?;
         assert_eq!(translated_texts.len(), expected_translations.len());
         for ((region, translated), expected_translation) in regions
             .iter()

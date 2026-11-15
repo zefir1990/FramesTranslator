@@ -11,6 +11,7 @@ use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
 
 use frames_translator::application_config::ApplicationConfig;
+use frames_translator::frame_translation::translate_frame_regions;
 use frames_translator::frames_ocr::{FramesOCR, RecognitionError};
 use frames_translator::frames_sourcer::FrameSourceError;
 use frames_translator::implementations::FramesDetectorSourcer;
@@ -142,7 +143,8 @@ fn load_scene(
     let mut overlays = Vec::with_capacity(detected_frames.len());
     for detected_frame in detected_frames {
         let regions = frames_ocr.recognize(detected_frame.frame())?;
-        let translated_texts = text_translator.translate_all(&regions)?;
+        let translated_texts =
+            translate_frame_regions(detected_frame.frame(), &regions, text_translator)?;
         overlays.push(FrameOverlay {
             bounds: detected_frame.bounds(),
             translated_texts,

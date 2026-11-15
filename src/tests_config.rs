@@ -8,6 +8,7 @@ pub struct TestsConfig {
     shadowrun_cd: ShadowrunCdTestConfig,
     shadowrun_dialog: ShadowrunDialogTestConfig,
     shadowrun_street: ShadowrunStreetTestConfig,
+    shadowrun_hospital: ShadowrunHospitalTestConfig,
 }
 
 impl TestsConfig {
@@ -15,11 +16,13 @@ impl TestsConfig {
         shadowrun_cd: ShadowrunCdTestConfig,
         shadowrun_dialog: ShadowrunDialogTestConfig,
         shadowrun_street: ShadowrunStreetTestConfig,
+        shadowrun_hospital: ShadowrunHospitalTestConfig,
     ) -> Self {
         Self {
             shadowrun_cd,
             shadowrun_dialog,
             shadowrun_street,
+            shadowrun_hospital,
         }
     }
 
@@ -33,6 +36,10 @@ impl TestsConfig {
 
     pub fn shadowrun_street(&self) -> &ShadowrunStreetTestConfig {
         &self.shadowrun_street
+    }
+
+    pub fn shadowrun_hospital(&self) -> &ShadowrunHospitalTestConfig {
+        &self.shadowrun_hospital
     }
 
     pub fn from_jsonc(source: &str) -> Result<Self, json5::Error> {
@@ -176,6 +183,50 @@ impl ShadowrunStreetTestConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShadowrunHospitalTestConfig {
+    #[serde(flatten)]
+    frames: FramesConfig,
+    #[serde(rename = "expectedResultOCR")]
+    expected_result_ocr: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "expectedTranslationResult")]
+    expected_translation_result: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "timeoutSeconds")]
+    timeout_seconds: u64,
+}
+
+impl ShadowrunHospitalTestConfig {
+    pub fn new(
+        frames: FramesConfig,
+        expected_result_ocr: BTreeMap<String, Vec<String>>,
+        expected_translation_result: BTreeMap<String, Vec<String>>,
+        timeout_seconds: u64,
+    ) -> Self {
+        Self {
+            frames,
+            expected_result_ocr,
+            expected_translation_result,
+            timeout_seconds,
+        }
+    }
+
+    pub fn frames(&self) -> &FramesConfig {
+        &self.frames
+    }
+
+    pub fn expected_result_ocr(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.expected_result_ocr
+    }
+
+    pub fn expected_translation_result(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.expected_translation_result
+    }
+
+    pub fn timeout_seconds(&self) -> u64 {
+        self.timeout_seconds
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +276,7 @@ mod tests {
             ),
             empty_dialog_config(),
             empty_street_config(),
+            empty_hospital_config(),
         );
         let shadowrun_cd = tests_config.shadowrun_cd();
         assert_eq!(shadowrun_cd.frames().frames().len(), 2);
@@ -269,6 +321,7 @@ mod tests {
                 5,
             ),
             empty_street_config(),
+            empty_hospital_config(),
         );
         let shadowrun_dialog = tests_config.shadowrun_dialog();
         assert_eq!(shadowrun_dialog.frames().frames().len(), 1);
@@ -308,6 +361,7 @@ mod tests {
                 expected_translation_result.clone(),
                 5,
             ),
+            empty_hospital_config(),
         );
         let shadowrun_street = tests_config.shadowrun_street();
         assert_eq!(shadowrun_street.frames().frames().len(), 1);
@@ -320,6 +374,51 @@ mod tests {
             &expected_translation_result
         );
         assert_eq!(shadowrun_street.timeout_seconds(), 5);
+    }
+
+    #[test]
+    fn tests_config_exposes_shadowrun_hospital_test_config() {
+        let frames_config = FramesConfig::new(vec![NamedRect::new(
+            "Hospital Dialog",
+            Bounds::new(39, 261, 411, 84),
+        )]);
+        let expected_result_ocr = BTreeMap::from([(
+            "Hospital Dialog".to_owned(),
+            ["おまえさんに", "尻をたたかれて", "やる気になったはいいが"]
+                .map(str::to_owned)
+                .to_vec(),
+        )]);
+        let expected_translation_result = BTreeMap::from([(
+            "Hospital Dialog".to_owned(),
+            ["I'd like to", "be motivated by", "my wife."]
+                .map(str::to_owned)
+                .to_vec(),
+        )]);
+        let tests_config = TestsConfig::new(
+            empty_cd_config(),
+            empty_dialog_config(),
+            empty_street_config(),
+            ShadowrunHospitalTestConfig::new(
+                frames_config,
+                expected_result_ocr.clone(),
+                expected_translation_result.clone(),
+                5,
+            ),
+        );
+        let shadowrun_hospital = tests_config.shadowrun_hospital();
+        assert_eq!(shadowrun_hospital.frames().frames().len(), 1);
+        let hospital_dialog = &shadowrun_hospital.frames().frames()[0];
+        assert_eq!(hospital_dialog.name(), "Hospital Dialog");
+        assert_eq!(hospital_dialog.rect(), Bounds::new(39, 261, 411, 84));
+        assert_eq!(
+            shadowrun_hospital.expected_result_ocr(),
+            &expected_result_ocr
+        );
+        assert_eq!(
+            shadowrun_hospital.expected_translation_result(),
+            &expected_translation_result
+        );
+        assert_eq!(shadowrun_hospital.timeout_seconds(), 5);
     }
 
     fn empty_cd_config() -> ShadowrunCdTestConfig {
@@ -342,6 +441,15 @@ mod tests {
 
     fn empty_street_config() -> ShadowrunStreetTestConfig {
         ShadowrunStreetTestConfig::new(
+            FramesConfig::new(Vec::new()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            5,
+        )
+    }
+
+    fn empty_hospital_config() -> ShadowrunHospitalTestConfig {
+        ShadowrunHospitalTestConfig::new(
             FramesConfig::new(Vec::new()),
             BTreeMap::new(),
             BTreeMap::new(),

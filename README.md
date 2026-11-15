@@ -28,12 +28,13 @@ Core models:
 - `TestsConfig` groups separate configuration structs for each test case, including expected OCR and translation results.
 - `TextRegion` pairs recognized text with its bounds.
 - `TranslatedText` pairs a source region with translated text.
+- `frame_translation` translates wide multi-line dialogs as one block and splits the result back across the original lines.
 
 ## Implementations
 
 | Interface | Concrete type | Behavior |
 | --- | --- | --- |
-| `FramesSourcer` | `FramesDetectorSourcer` | Detects frames as connected background-color regions that contain text-color pixels in the Shadowrun sample images. |
+| `FramesSourcer` | `FramesDetectorSourcer` | Detects frames as connected background-color regions that contain text-color pixels in the Shadowrun sample images, with tolerance for scaled and anti-aliased pixels. |
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
@@ -61,9 +62,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 }
 ```
 
-`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. A frame matches when its background pixels use any configured background color and its text pixels use any configured text color. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. `verboseMode` defaults to `true`; when enabled, the interactive window prints the detected frame count in green at the top-left corner. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
+`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. A frame matches when its background pixels are near any configured background color and its text pixels are near any configured text color. Channel tolerance handles scaled screenshots whose anti-aliased text is gray rather than exactly white. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. `verboseMode` defaults to `true`; when enabled, the interactive window prints the detected frame count in green at the top-left corner. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
-Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, and a `shadowrun_street` case for the Shibuya street dialog box. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
+Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, a `shadowrun_street` case for the Shibuya street dialog box, and a `shadowrun_hospital` case for the upscaled hospital dialog. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
 ## Interactive application
 
@@ -71,7 +72,7 @@ The `FramesTranslator` executable opens an SDL3 window that accepts image files 
 
 1. Loads the image.
 2. Detects text frames using the configured background and text color arrays.
-3. Recognizes and translates each detected frame.
+3. Recognizes and translates each detected frame. Wide dialog frames with three or more lines are translated as one block so the lines keep their context, then the translation is distributed back across the original lines.
 4. Replaces each frame in place with its translations.
 5. In verbose mode, shows the detected frame count in green at the top-left corner.
 
@@ -121,6 +122,7 @@ src/
   application_config.rs        ApplicationConfig JSONC loading
   factory.rs                   Class-name based implementation selection
   frame.rs                     Named RGBA frame model
+  frame_translation.rs         Context-aware dialog translation and line distribution
   frames_config.rs             Named frame rectangles
   frames_ocr.rs                OCR trait and error
   frames_sourcer.rs            Frame source trait and error
@@ -141,6 +143,7 @@ tests/
   frames_sourcer_test.rs
   shadowrun_cd_pipeline_test.rs
   shadowrun_dialog_pipeline_test.rs
+  shadowrun_hospital_pipeline_test.rs
   shadowrun_street_pipeline_test.rs
   tests_config_test.rs
   text_renderer_test.rs
@@ -149,6 +152,7 @@ test-case/
   Shadowrun_01.png             Intro dialog sample image
   Shadowrun_02.png             Gameplay menu sample image
   Shadowrun_03.png             Street dialog sample image
+  Shadowrun_04.png             Upscaled hospital dialog sample image
   tests-application-config.jsonc
   tests-config.jsonc           Serialized TestsConfig
 third-party/
@@ -166,7 +170,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, color-based detection of both Shadowrun CD panels and the intro and street dialog boxes, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, color-based detection of both Shadowrun CD panels and the intro, street, and hospital dialog boxes, tolerant matching of scaled gray text, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

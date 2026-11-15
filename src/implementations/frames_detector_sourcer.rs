@@ -11,6 +11,8 @@ const MINIMUM_FRAME_WIDTH: u32 = 16;
 const MINIMUM_FRAME_HEIGHT: u32 = 16;
 const MINIMUM_TEXT_PIXEL_COUNT: usize = 16;
 const MINIMUM_BACKGROUND_SHARE_PERCENT: u64 = 50;
+const BACKGROUND_COLOR_TOLERANCE: u8 = 8;
+const TEXT_COLOR_TOLERANCE: u8 = 32;
 const MAXIMUM_RGB_VALUE: u32 = 0xFF_FFFF;
 const RED_SHIFT: u32 = 16;
 const GREEN_SHIFT: u32 = 8;
@@ -104,8 +106,10 @@ impl RgbColor {
         })
     }
 
-    fn matches(self, pixel: [u8; 4]) -> bool {
-        pixel[0] == self.red && pixel[1] == self.green && pixel[2] == self.blue
+    fn matches_within(self, pixel: [u8; 4], tolerance: u8) -> bool {
+        pixel[0].abs_diff(self.red) <= tolerance
+            && pixel[1].abs_diff(self.green) <= tolerance
+            && pixel[2].abs_diff(self.blue) <= tolerance
     }
 }
 
@@ -124,8 +128,10 @@ impl RgbColorSet {
         Ok(Self { colors })
     }
 
-    fn matches(&self, pixel: [u8; 4]) -> bool {
-        self.colors.iter().any(|color| color.matches(pixel))
+    fn matches_within(&self, pixel: [u8; 4], tolerance: u8) -> bool {
+        self.colors
+            .iter()
+            .any(|color| color.matches_within(pixel, tolerance))
     }
 }
 
@@ -166,7 +172,7 @@ fn detect_frame_bounds(
 fn background_mask(image: &RgbaImage, background_colors: &RgbColorSet) -> Vec<bool> {
     image
         .pixels()
-        .map(|pixel| background_colors.matches(pixel.0))
+        .map(|pixel| background_colors.matches_within(pixel.0, BACKGROUND_COLOR_TOLERANCE))
         .collect()
 }
 
@@ -236,17 +242,17 @@ fn is_text_frame(
     if bounds.width() < MINIMUM_FRAME_WIDTH || bounds.height() < MINIMUM_FRAME_HEIGHT {
         return false;
     }
-    if count_color_pixels(image, bounds, text_colors) < MINIMUM_TEXT_PIXEL_COUNT {
+    if count_text_pixels(image, bounds, text_colors) < MINIMUM_TEXT_PIXEL_COUNT {
         return false;
     }
     let area = bounds.width() as u64 * bounds.height() as u64;
     component.background_pixel_count as u64 * 100 >= area * MINIMUM_BACKGROUND_SHARE_PERCENT
 }
 
-fn count_color_pixels(image: &RgbaImage, bounds: Bounds, colors: &RgbColorSet) -> usize {
+fn count_text_pixels(image: &RgbaImage, bounds: Bounds, colors: &RgbColorSet) -> usize {
     (bounds.y()..bounds.bottom())
         .flat_map(|y| (bounds.x()..bounds.right()).map(move |x| (x, y)))
-        .filter(|&(x, y)| colors.matches(image.get_pixel(x, y).0))
+        .filter(|&(x, y)| colors.matches_within(image.get_pixel(x, y).0, TEXT_COLOR_TOLERANCE))
         .count()
 }
 
@@ -291,10 +297,25 @@ mod tests {
         green: 255,
         blue: 255,
     };
+    const SCALED_TEXT_COLOR: RgbColor = RgbColor {
+        red: 230,
+        green: 230,
+        blue: 230,
+    };
+    const FAR_TEXT_COLOR: RgbColor = RgbColor {
+        red: 180,
+        green: 180,
+        blue: 180,
+    };
+    const SCALED_BACKGROUND_COLOR: RgbColor = RgbColor {
+        red: 5,
+        green: 5,
+        blue: 5,
+    };
     const SURROUND_COLOR: RgbColor = RgbColor {
-        red: 1,
-        green: 1,
-        blue: 1,
+        red: 64,
+        green: 64,
+        blue: 64,
     };
 
     #[test]
@@ -322,6 +343,38 @@ mod tests {
             &image,
             &color_set(&[BACKGROUND_COLOR]),
             &color_set(&[TEXT_COLOR, ALTERNATIVE_TEXT_COLOR]),
+        );
+        assert_eq!(detected_bounds, vec![Bounds::new(2, 2, 20, 20)]);
+    }
+
+    #[test]
+    fn detects_scaled_background_colors_within_tolerance() {
+        let mut image = blank_image(32, 32);
+        fill_rectangle(
+            &mut image,
+            Bounds::new(2, 2, 20, 20),
+            SCALED_BACKGROUND_COLOR,
+        );
+        fill_rectangle(&mut image, Bounds::new(4, 4, 4, 4), TEXT_COLOR);
+        let detected_bounds = detect_frame_bounds(
+            &image,
+            &color_set(&[BACKGROUND_COLOR]),
+            &color_set(&[TEXT_COLOR]),
+        );
+        assert_eq!(detected_bounds, vec![Bounds::new(2, 2, 20, 20)]);
+    }
+
+    #[test]
+    fn detects_scaled_text_colors_within_tolerance() {
+        let mut image = blank_image(64, 32);
+        fill_rectangle(&mut image, Bounds::new(2, 2, 20, 20), BACKGROUND_COLOR);
+        fill_rectangle(&mut image, Bounds::new(42, 2, 20, 20), BACKGROUND_COLOR);
+        fill_rectangle(&mut image, Bounds::new(4, 4, 4, 4), SCALED_TEXT_COLOR);
+        fill_rectangle(&mut image, Bounds::new(44, 4, 4, 4), FAR_TEXT_COLOR);
+        let detected_bounds = detect_frame_bounds(
+            &image,
+            &color_set(&[BACKGROUND_COLOR]),
+            &color_set(&[TEXT_COLOR]),
         );
         assert_eq!(detected_bounds, vec![Bounds::new(2, 2, 20, 20)]);
     }

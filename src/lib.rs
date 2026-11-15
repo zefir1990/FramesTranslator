@@ -1,6 +1,7 @@
 pub mod application_config;
 pub mod factory;
 pub mod frame;
+pub mod frame_translation;
 pub mod frames_config;
 pub mod frames_ocr;
 pub mod frames_sourcer;
@@ -16,6 +17,7 @@ pub use factory::{
     create_text_translator,
 };
 pub use frame::{Frame, FrameError};
+pub use frame_translation::translate_frame_regions;
 pub use frames_config::{FramesConfig, NamedRect};
 pub use frames_ocr::{FramesOCR, RecognitionError};
 pub use frames_sourcer::{FrameSourceError, FramesSourcer};

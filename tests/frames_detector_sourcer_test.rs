@@ -12,12 +12,14 @@ use frames_translator::text_region::Bounds;
 const SHADOWRUN_CD_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
 const SHADOWRUN_DIALOG_IMAGE_PATH: &str = "test-case/Shadowrun_01.png";
 const SHADOWRUN_STREET_IMAGE_PATH: &str = "test-case/Shadowrun_03.png";
+const SHADOWRUN_HOSPITAL_IMAGE_PATH: &str = "test-case/Shadowrun_04.png";
 const BACKGROUND_COLOR: u32 = 0x000000;
 const TEXT_COLOR: u32 = 0xFCFCFC;
 const SHADOWRUN_CD_BOUNDS: [Bounds; 2] =
     [Bounds::new(18, 86, 91, 68), Bounds::new(146, 86, 75, 68)];
 const SHADOWRUN_DIALOG_BOUNDS: [Bounds; 1] = [Bounds::new(26, 158, 267, 52)];
 const SHADOWRUN_STREET_BOUNDS: [Bounds; 1] = [Bounds::new(26, 158, 267, 52)];
+const SHADOWRUN_HOSPITAL_BOUNDS: [Bounds; 1] = [Bounds::new(39, 261, 411, 84)];
 
 #[test]
 fn frames_detector_sourcer_detects_shadowrun_menu_panels() -> Result<(), Box<dyn Error>> {
@@ -46,6 +48,16 @@ fn frames_detector_sourcer_detects_shadowrun_street_dialog_frame() -> Result<(),
         &application_config,
         SHADOWRUN_STREET_IMAGE_PATH,
         &SHADOWRUN_STREET_BOUNDS,
+    )
+}
+
+#[test]
+fn frames_detector_sourcer_detects_shadowrun_hospital_dialog_frame() -> Result<(), Box<dyn Error>> {
+    let application_config = support::load_application_config()?;
+    assert_detected_frames(
+        &application_config,
+        SHADOWRUN_HOSPITAL_IMAGE_PATH,
+        &SHADOWRUN_HOSPITAL_BOUNDS,
     )
 }
 

@@ -105,5 +105,34 @@
       ]
     },
     "timeoutSeconds": 5
+  },
+  "shadowrun_hospital": {
+    "frames": [
+      // Upscaled hospital dialog with anti-aliased gray text
+      {
+        "name": "Hospital Dialog",
+        "rect": {
+          "x": 39,
+          "y": 261,
+          "width": 411,
+          "height": 84
+        }
+      }
+    ],
+    "expectedResultOCR": {
+      "Hospital Dialog": [
+        "おまえさんに",
+        "尻をたたかれて",
+        "やる気になったはいいが"
+      ]
+    },
+    "expectedTranslationResult": {
+      "Hospital Dialog": [
+        "I'd like to",
+        "be motivated by",
+        "my wife."
+      ]
+    },
+    "timeoutSeconds": 5
   }
 }

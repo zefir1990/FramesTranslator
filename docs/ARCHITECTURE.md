@@ -40,6 +40,7 @@ flowchart LR
 | Path | Responsibility |
 | --- | --- |
 | `src/frame.rs` | Named RGBA `Frame` model and `FrameError` |
+| `src/frame_translation.rs` | Context-aware dialog translation and line distribution |
 | `src/frames_config.rs` | `FramesConfig` and named frame rectangles |
 | `src/tests_config.rs` | `TestsConfig` and per-test configuration structs |
 | `src/application_config.rs` | `ApplicationConfig` implementation selection and JSONC methods |
@@ -74,7 +75,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 
 ### TestsConfig
 
-`TestsConfig` groups a separate configuration struct for each test case. It exposes `ShadowrunCdTestConfig` for the gameplay menus, `ShadowrunDialogTestConfig` for the intro dialog box, and `ShadowrunStreetTestConfig` for the Shibuya street dialog box. Each owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
+`TestsConfig` groups a separate configuration struct for each test case. It exposes `ShadowrunCdTestConfig` for the gameplay menus, `ShadowrunDialogTestConfig` for the intro dialog box, `ShadowrunStreetTestConfig` for the Shibuya street dialog box, and `ShadowrunHospitalTestConfig` for the upscaled hospital dialog. Each owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -150,9 +151,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 `ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions.
 
-`FramesDetectorSourcer` uses the fixed `Shadowrun_02.png` image when created through the factory and reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. A pixel matches a color set when it equals any color in that set. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` and `Shadowrun_03.png` directly with the same configured color arrays.
+`FramesDetectorSourcer` uses the fixed `Shadowrun_02.png` image when created through the factory and reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. A pixel matches a color set when every channel is within a fixed tolerance of any color in that set: 8 for background colors and 32 for text colors. The text tolerance handles upscaled screenshots whose anti-aliased glyphs are gray instead of the configured near-white. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` through `Shadowrun_04.png` directly with the same configured color arrays.
 
-The detector produces two frames for `Shadowrun_02.png` and one frame each for `Shadowrun_01.png` and `Shadowrun_03.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
+The detector produces two frames for `Shadowrun_02.png` and one frame each for `Shadowrun_01.png`, `Shadowrun_03.png`, and `Shadowrun_04.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
 
 Because the application configuration remains focused on implementation selection and the two detector colors, other backend-specific settings are constants inside implementations rather than configuration values.
 
@@ -214,6 +215,21 @@ Because the application configuration remains focused on implementation selectio
       "Street Dialog": ["Shibuya", "A very nice city"]
     },
     "timeoutSeconds": 5
+  },
+  "shadowrun_hospital": {
+    "frames": [
+      {
+        "name": "Hospital Dialog",
+        "rect": { "x": 39, "y": 261, "width": 411, "height": 84 }
+      }
+    ],
+    "expectedResultOCR": {
+      "Hospital Dialog": ["おまえさんに", "尻をたたかれて", "やる気になったはいいが"]
+    },
+    "expectedTranslationResult": {
+      "Hospital Dialog": ["I'd like to", "be motivated by", "my wife."]
+    },
+    "timeoutSeconds": 5
   }
 }
 ```
@@ -226,7 +242,7 @@ For each `Event::DropFile`, the application:
 
 1. Decodes the dropped image into an RGBA image.
 2. Calls `FramesDetectorSourcer::detect`, which returns `DetectedFrame` values with both the cropped frame and its original bounds.
-3. Runs `FramesOCR::recognize` and `TextTranslator::translate_all` for each detected frame.
+3. Runs `FramesOCR::recognize` for each detected frame. Wide dialog frames with at least three lines go through `translate_frame_regions`, which translates the combined text once and distributes the result across the original lines; other frames use `TextTranslator::translate_all` per line.
 4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines at the corresponding region offsets.
 5. When `verboseMode` is enabled, draws `Frames detected: N` in green at the top-left corner in screen coordinates.
 6. Presents the result and waits for another drop, `Escape`, or window close.
@@ -298,7 +314,8 @@ Integration tests live in `tests/`:
 - `frames_sourcer_test.rs` validates both detected frames against the expected names, positions, dimensions, and crop pixels from `tests-config.jsonc`.
 - `frames_ocr_test.rs` validates four OCR lines per detected frame using the `expectedResultOCR` dictionary keyed by expected frame name.
 - `shadowrun_cd_pipeline_test.rs` validates four translations per detected frame using the `expectedTranslationResult` dictionary and renders both frames.
-- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_01.png`, `test-case/Shadowrun_02.png`, and `test-case/Shadowrun_03.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
+- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_01.png` through `test-case/Shadowrun_04.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
+- `shadowrun_hospital_pipeline_test.rs` runs the upscaled `Shadowrun_04.png` hospital dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting its three lines, translations, and rendered blocks.
 - `shadowrun_dialog_pipeline_test.rs` runs the `Shadowrun_01.png` dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting both recognized lines, both translations, and the rendered blocks.
 - `shadowrun_street_pipeline_test.rs` runs the `Shadowrun_03.png` street dialog through the same pipeline and asserts its two recognized lines, translations, and rendered blocks.
 - `application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
@@ -307,13 +324,14 @@ Integration tests live in `tests/`:
 Coverage includes:
 
 - PNG decoding, detected frame dimensions and crop pixel fidelity,
-- color-based frame detection of both menu panels and the intro and street dialog boxes, reading-order output, multi-color matching, detection thresholds, and invalid color rejection,
+- color-based frame detection of both menu panels and the intro, street, and hospital dialog boxes, reading-order output, multi-color matching with tolerance for scaled gray text, detection thresholds, and invalid color rejection,
 - source termination,
 - exact per-frame OCR regions and frame containment,
-- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, and `"Street Dialog"` text extraction,
+- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, `"Street Dialog"`, and `"Hospital Dialog"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
+- context-aware block translation and line distribution for wide multi-line dialogs,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
-- full Shadowrun intro and street dialog detection to OCR to translation to block-rendering pipelines,
+- full Shadowrun intro, street, and hospital dialog detection to OCR to translation to block-rendering pipelines,
 - SDL preview timeout behavior,
 - single and batch translation,
 - unknown dictionary entries,
@@ -374,4 +392,4 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus `FramesDetectorSourcer` colors.
-- `FramesDetectorSourcer` requires exact matches against the configured background and text color arrays and uses fixed detection thresholds.
+- `FramesDetectorSourcer` matches the configured background and text color arrays within fixed channel tolerances and uses fixed detection thresholds.

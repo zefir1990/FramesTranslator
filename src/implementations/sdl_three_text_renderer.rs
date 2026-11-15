@@ -219,7 +219,8 @@ mod tests {
 
     use crate::frames_config::{FramesConfig, NamedRect};
     use crate::tests_config::{
-        ShadowrunCdTestConfig, ShadowrunDialogTestConfig, ShadowrunStreetTestConfig,
+        ShadowrunCdTestConfig, ShadowrunDialogTestConfig, ShadowrunHospitalTestConfig,
+        ShadowrunStreetTestConfig,
     };
 
     #[test]
@@ -274,6 +275,12 @@ mod tests {
                     "Street Dialog",
                     Bounds::new(26, 158, 267, 52),
                 )]),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                5,
+            ),
+            ShadowrunHospitalTestConfig::new(
+                FramesConfig::new(Vec::new()),
                 BTreeMap::new(),
                 BTreeMap::new(),
                 5,
