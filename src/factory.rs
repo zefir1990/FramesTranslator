@@ -26,8 +26,8 @@ pub fn create_frames_sourcer(
         "SyntheticFramesSourcer" => Ok(Box::new(SyntheticFramesSourcer::new())),
         "FramesDetectorSourcer" => Ok(Box::new(FramesDetectorSourcer::open(
             manifest_path(DEFAULT_IMAGE_PATH),
-            config.frames_detection_background_color(),
-            config.frames_detection_text_color(),
+            config.frames_detection_background_colors(),
+            config.frames_detection_text_colors(),
         )?)),
         "ImageFramesSourcer" => {
             let tests_config = load_tests_config(manifest_path(DEFAULT_TESTS_CONFIG_PATH))?;

@@ -7,8 +7,8 @@ pub struct ApplicationConfig {
     frames_ocr: String,
     text_translator: String,
     text_renderer: String,
-    frames_detection_background_color: u32,
-    frames_detection_text_color: u32,
+    frames_detection_background_colors: Vec<u32>,
+    frames_detection_text_colors: Vec<u32>,
 }
 
 impl ApplicationConfig {
@@ -17,16 +17,16 @@ impl ApplicationConfig {
         frames_ocr: impl Into<String>,
         text_translator: impl Into<String>,
         text_renderer: impl Into<String>,
-        frames_detection_background_color: u32,
-        frames_detection_text_color: u32,
+        frames_detection_background_colors: Vec<u32>,
+        frames_detection_text_colors: Vec<u32>,
     ) -> Self {
         Self {
             frames_sourcer: frames_sourcer.into(),
             frames_ocr: frames_ocr.into(),
             text_translator: text_translator.into(),
             text_renderer: text_renderer.into(),
-            frames_detection_background_color,
-            frames_detection_text_color,
+            frames_detection_background_colors,
+            frames_detection_text_colors,
         }
     }
 
@@ -46,12 +46,12 @@ impl ApplicationConfig {
         &self.text_renderer
     }
 
-    pub fn frames_detection_background_color(&self) -> u32 {
-        self.frames_detection_background_color
+    pub fn frames_detection_background_colors(&self) -> &[u32] {
+        &self.frames_detection_background_colors
     }
 
-    pub fn frames_detection_text_color(&self) -> u32 {
-        self.frames_detection_text_color
+    pub fn frames_detection_text_colors(&self) -> &[u32] {
+        &self.frames_detection_text_colors
     }
 
     pub fn from_jsonc(source: &str) -> Result<Self, json5::Error> {
@@ -74,8 +74,8 @@ mod tests {
             "FixtureFramesOCR",
             "DictionaryTextTranslator",
             "BlockTextRenderer",
-            0x000000,
-            0xFCFCFC,
+            vec![0x000000],
+            vec![0xFCFCFC, 0xFFFFFF],
         );
         assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
         assert_eq!(application_config.frames_ocr(), "FixtureFramesOCR");
@@ -85,9 +85,12 @@ mod tests {
         );
         assert_eq!(application_config.text_renderer(), "BlockTextRenderer");
         assert_eq!(
-            application_config.frames_detection_background_color(),
-            0x000000
+            application_config.frames_detection_background_colors(),
+            [0x000000]
         );
-        assert_eq!(application_config.frames_detection_text_color(), 0xFCFCFC);
+        assert_eq!(
+            application_config.frames_detection_text_colors(),
+            [0xFCFCFC, 0xFFFFFF]
+        );
     }
 }

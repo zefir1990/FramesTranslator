@@ -3,7 +3,12 @@
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
-  // Detected frames use a solid black background with near-white text
-  "framesDetectionBackgroundColor": 0x000000,
-  "framesDetectionTextColor": 0xfcfcfc
+  // Detected frames use solid backgrounds with near-white or white text
+  "framesDetectionBackgroundColors": [
+    0x000000
+  ],
+  "framesDetectionTextColors": [
+    0xfcfcfc,
+    0xffffff
+  ]
 }

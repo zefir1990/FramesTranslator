@@ -27,7 +27,7 @@ fn tests_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn Error>
     assert_expected_texts(
         tests_config.shadowrun_cd().expected_result_ocr(),
         "Contacts",
-        ["仲間", "通行人１", "通行人２", "通行人９"],
+        ["仲間", "通行人１", "通行人２", "通行人３"],
     );
     assert_expected_texts(
         tests_config.shadowrun_cd().expected_translation_result(),
@@ -37,9 +37,27 @@ fn tests_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn Error>
     assert_expected_texts(
         tests_config.shadowrun_cd().expected_translation_result(),
         "Contacts",
-        ["Contact Us", "Traffic1.", "person 2.", "Traffic 9."],
+        ["Contact Us", "Traffic1.", "person 2.", "Traffic 3."],
     );
     assert_eq!(tests_config.shadowrun_cd().timeout_seconds(), 5);
+    let dialog = tests_config.shadowrun_dialog();
+    assert_eq!(dialog.frames().frames().len(), 1);
+    assert_eq!(dialog.frames().frames()[0].name(), "Dialog");
+    assert_eq!(
+        dialog.frames().frames()[0].rect(),
+        Bounds::new(26, 158, 267, 52)
+    );
+    assert_expected_texts(
+        dialog.expected_result_ocr(),
+        "Dialog",
+        ["意外に手ごたえのない", "連中だったわね"],
+    );
+    assert_expected_texts(
+        dialog.expected_translation_result(),
+        "Dialog",
+        ["Unexpected", "It was a long time."],
+    );
+    assert_eq!(dialog.timeout_seconds(), 5);
     let serialized = tests_config.to_jsonc()?;
     let restored = TestsConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, tests_config);

@@ -205,7 +205,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::frames_config::{FramesConfig, NamedRect};
-    use crate::tests_config::ShadowrunCdTestConfig;
+    use crate::tests_config::{ShadowrunCdTestConfig, ShadowrunDialogTestConfig};
 
     #[test]
     fn finds_frame_placement_by_frame_name() {
@@ -226,15 +226,23 @@ mod tests {
     }
 
     fn tests_config() -> TestsConfig {
-        TestsConfig::new(ShadowrunCdTestConfig::new(
-            FramesConfig::new(vec![
-                NamedRect::new("Actions Menu", Bounds::new(18, 86, 91, 68)),
-                NamedRect::new("Contacts", Bounds::new(146, 86, 75, 68)),
-            ]),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            5,
-        ))
+        TestsConfig::new(
+            ShadowrunCdTestConfig::new(
+                FramesConfig::new(vec![
+                    NamedRect::new("Actions Menu", Bounds::new(18, 86, 91, 68)),
+                    NamedRect::new("Contacts", Bounds::new(146, 86, 75, 68)),
+                ]),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                5,
+            ),
+            ShadowrunDialogTestConfig::new(
+                FramesConfig::new(Vec::new()),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                5,
+            ),
+        )
     }
 
     fn frame(name: &str, width: u32, height: u32) -> Frame {

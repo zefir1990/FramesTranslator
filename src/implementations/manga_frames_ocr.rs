@@ -13,6 +13,7 @@ const OCR_SCRIPT_PATH: &str = "scripts/manga_ocr_worker.py";
 const READY_RESPONSE: &str = "READY";
 const INK_LUMINANCE_THRESHOLD: u32 = 160;
 const LINE_VERTICAL_PADDING: u32 = 1;
+const LINE_HORIZONTAL_PADDING: u32 = 6;
 const MINIMUM_LINE_HEIGHT: u32 = 4;
 
 static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -118,14 +119,41 @@ fn push_line(lines: &mut Vec<Bounds>, frame: &Frame, start: u32, end: u32) {
     if end - start < MINIMUM_LINE_HEIGHT {
         return;
     }
-    let padded_start = start.saturating_sub(LINE_VERTICAL_PADDING);
-    let padded_end = (end + LINE_VERTICAL_PADDING).min(frame.height());
+    let Some((ink_start, ink_end)) = horizontal_ink_extent(frame, start, end) else {
+        return;
+    };
+    let padded_start_y = start.saturating_sub(LINE_VERTICAL_PADDING);
+    let padded_end_y = (end + LINE_VERTICAL_PADDING).min(frame.height());
+    let padded_start_x = ink_start.saturating_sub(LINE_HORIZONTAL_PADDING);
+    let padded_end_x = ink_end
+        .saturating_add(LINE_HORIZONTAL_PADDING)
+        .saturating_add(1)
+        .min(frame.width());
     lines.push(Bounds::new(
-        0,
-        padded_start,
-        frame.width(),
-        padded_end - padded_start,
+        padded_start_x,
+        padded_start_y,
+        padded_end_x - padded_start_x,
+        padded_end_y - padded_start_y,
     ));
+}
+
+fn horizontal_ink_extent(frame: &Frame, start_y: u32, end_y: u32) -> Option<(u32, u32)> {
+    let row_length = frame.width() as usize * CHANNELS_PER_PIXEL;
+    let mut minimum_x = frame.width();
+    let mut maximum_x = 0;
+    let mut ink_found = false;
+    for y in start_y..end_y {
+        let row_start = y as usize * row_length;
+        let row = &frame.rgba_pixels()[row_start..row_start + row_length];
+        for (x, pixel) in row.as_chunks::<CHANNELS_PER_PIXEL>().0.iter().enumerate() {
+            if pixel_luminance(pixel) >= INK_LUMINANCE_THRESHOLD {
+                minimum_x = minimum_x.min(x as u32);
+                maximum_x = maximum_x.max(x as u32);
+                ink_found = true;
+            }
+        }
+    }
+    ink_found.then_some((minimum_x, maximum_x))
 }
 
 fn crop_frame(frame: &Frame, bounds: Bounds) -> Result<Frame, RecognitionError> {

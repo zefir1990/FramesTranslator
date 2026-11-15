@@ -33,7 +33,7 @@
         "仲間",
         "通行人１",
         "通行人２",
-        "通行人９"
+        "通行人３"
       ]
     },
     "expectedTranslationResult": {
@@ -47,7 +47,34 @@
         "Contact Us",
         "Traffic1.",
         "person 2.",
-        "Traffic 9."
+        "Traffic 3."
+      ]
+    },
+    "timeoutSeconds": 5
+  },
+  "shadowrun_dialog": {
+    "frames": [
+      // Dialog text box shown during the Shadowrun CD intro scene
+      {
+        "name": "Dialog",
+        "rect": {
+          "x": 26,
+          "y": 158,
+          "width": 267,
+          "height": 52
+        }
+      }
+    ],
+    "expectedResultOCR": {
+      "Dialog": [
+        "意外に手ごたえのない",
+        "連中だったわね"
+      ]
+    },
+    "expectedTranslationResult": {
+      "Dialog": [
+        "Unexpected",
+        "It was a long time."
       ]
     },
     "timeoutSeconds": 5

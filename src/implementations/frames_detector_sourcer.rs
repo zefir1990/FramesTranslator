@@ -25,17 +25,17 @@ pub struct FramesDetectorSourcer {
 impl FramesDetectorSourcer {
     pub fn open(
         path: impl AsRef<Path>,
-        background_color: u32,
-        text_color: u32,
+        background_colors: &[u32],
+        text_colors: &[u32],
     ) -> Result<Self, FrameSourceError> {
-        let background_color = RgbColor::from_rgb_value("background", background_color)?;
-        let text_color = RgbColor::from_rgb_value("text", text_color)?;
+        let background_colors = RgbColorSet::from_rgb_values("background", background_colors)?;
+        let text_colors = RgbColorSet::from_rgb_values("text", text_colors)?;
         let path = path.as_ref();
         let image = image::open(path).map_err(|error| {
             FrameSourceError::Decoding(format!("failed to decode {}: {error}", path.display()))
         })?;
         let rgba_image = image.to_rgba8();
-        let frames = detect_frame_bounds(&rgba_image, background_color, text_color)
+        let frames = detect_frame_bounds(&rgba_image, &background_colors, &text_colors)
             .into_iter()
             .enumerate()
             .map(|(index, bounds)| extract_frame(&rgba_image, bounds, index + 1))
@@ -76,6 +76,26 @@ impl RgbColor {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RgbColorSet {
+    colors: Vec<RgbColor>,
+}
+
+impl RgbColorSet {
+    fn from_rgb_values(name: &'static str, values: &[u32]) -> Result<Self, FrameSourceError> {
+        let colors = values
+            .iter()
+            .copied()
+            .map(|value| RgbColor::from_rgb_value(name, value))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { colors })
+    }
+
+    fn matches(&self, pixel: [u8; 4]) -> bool {
+        self.colors.iter().any(|color| color.matches(pixel))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct BackgroundComponent {
     bounds: Bounds,
@@ -84,10 +104,10 @@ struct BackgroundComponent {
 
 fn detect_frame_bounds(
     image: &RgbaImage,
-    background_color: RgbColor,
-    text_color: RgbColor,
+    background_colors: &RgbColorSet,
+    text_colors: &RgbColorSet,
 ) -> Vec<Bounds> {
-    let background_mask = background_mask(image, background_color);
+    let background_mask = background_mask(image, background_colors);
     let mut visited = vec![false; background_mask.len()];
     let mut detected_bounds = Vec::new();
     for y in 0..image.height() {
@@ -100,7 +120,7 @@ fn detect_frame_bounds(
                     (x, y),
                     &mut visited,
                 );
-                if is_text_frame(image, &component, text_color) {
+                if is_text_frame(image, &component, text_colors) {
                     detected_bounds.push(component.bounds);
                 }
             }
@@ -110,10 +130,10 @@ fn detect_frame_bounds(
     detected_bounds
 }
 
-fn background_mask(image: &RgbaImage, background_color: RgbColor) -> Vec<bool> {
+fn background_mask(image: &RgbaImage, background_colors: &RgbColorSet) -> Vec<bool> {
     image
         .pixels()
-        .map(|pixel| background_color.matches(pixel.0))
+        .map(|pixel| background_colors.matches(pixel.0))
         .collect()
 }
 
@@ -174,22 +194,26 @@ fn pixel_index(x: u32, y: u32, width: u32) -> usize {
     y as usize * width as usize + x as usize
 }
 
-fn is_text_frame(image: &RgbaImage, component: &BackgroundComponent, text_color: RgbColor) -> bool {
+fn is_text_frame(
+    image: &RgbaImage,
+    component: &BackgroundComponent,
+    text_colors: &RgbColorSet,
+) -> bool {
     let bounds = component.bounds;
     if bounds.width() < MINIMUM_FRAME_WIDTH || bounds.height() < MINIMUM_FRAME_HEIGHT {
         return false;
     }
-    if count_color_pixels(image, bounds, text_color) < MINIMUM_TEXT_PIXEL_COUNT {
+    if count_color_pixels(image, bounds, text_colors) < MINIMUM_TEXT_PIXEL_COUNT {
         return false;
     }
     let area = bounds.width() as u64 * bounds.height() as u64;
     component.background_pixel_count as u64 * 100 >= area * MINIMUM_BACKGROUND_SHARE_PERCENT
 }
 
-fn count_color_pixels(image: &RgbaImage, bounds: Bounds, color: RgbColor) -> usize {
+fn count_color_pixels(image: &RgbaImage, bounds: Bounds, colors: &RgbColorSet) -> usize {
     (bounds.y()..bounds.bottom())
         .flat_map(|y| (bounds.x()..bounds.right()).map(move |x| (x, y)))
-        .filter(|&(x, y)| color.matches(image.get_pixel(x, y).0))
+        .filter(|&(x, y)| colors.matches(image.get_pixel(x, y).0))
         .count()
 }
 
@@ -229,6 +253,11 @@ mod tests {
         green: 252,
         blue: 252,
     };
+    const ALTERNATIVE_TEXT_COLOR: RgbColor = RgbColor {
+        red: 255,
+        green: 255,
+        blue: 255,
+    };
     const SURROUND_COLOR: RgbColor = RgbColor {
         red: 1,
         green: 1,
@@ -243,7 +272,24 @@ mod tests {
         fill_rectangle(&mut image, Bounds::new(2, 2, 20, 20), BACKGROUND_COLOR);
         fill_rectangle(&mut image, Bounds::new(42, 2, 20, 20), BACKGROUND_COLOR);
         fill_rectangle(&mut image, Bounds::new(4, 4, 4, 4), TEXT_COLOR);
-        let detected_bounds = detect_frame_bounds(&image, BACKGROUND_COLOR, TEXT_COLOR);
+        let detected_bounds = detect_frame_bounds(
+            &image,
+            &color_set(&[BACKGROUND_COLOR]),
+            &color_set(&[TEXT_COLOR]),
+        );
+        assert_eq!(detected_bounds, vec![Bounds::new(2, 2, 20, 20)]);
+    }
+
+    #[test]
+    fn detects_text_with_any_configured_text_color() {
+        let mut image = blank_image(32, 32);
+        fill_rectangle(&mut image, Bounds::new(2, 2, 20, 20), BACKGROUND_COLOR);
+        fill_rectangle(&mut image, Bounds::new(4, 4, 4, 4), ALTERNATIVE_TEXT_COLOR);
+        let detected_bounds = detect_frame_bounds(
+            &image,
+            &color_set(&[BACKGROUND_COLOR]),
+            &color_set(&[TEXT_COLOR, ALTERNATIVE_TEXT_COLOR]),
+        );
         assert_eq!(detected_bounds, vec![Bounds::new(2, 2, 20, 20)]);
     }
 
@@ -252,12 +298,19 @@ mod tests {
         let mut image = blank_image(32, 32);
         fill_rectangle(&mut image, Bounds::new(1, 1, 8, 8), BACKGROUND_COLOR);
         fill_rectangle(&mut image, Bounds::new(2, 2, 4, 4), TEXT_COLOR);
-        assert!(detect_frame_bounds(&image, BACKGROUND_COLOR, TEXT_COLOR).is_empty());
+        assert!(
+            detect_frame_bounds(
+                &image,
+                &color_set(&[BACKGROUND_COLOR]),
+                &color_set(&[TEXT_COLOR])
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn rejects_color_values_outside_the_rgb_range() {
-        let result = RgbColor::from_rgb_value("background", 0x1_000_000);
+        let result = RgbColorSet::from_rgb_values("background", &[0x1_000_000]);
         assert!(matches!(
             result,
             Err(FrameSourceError::InvalidColor {
@@ -265,6 +318,12 @@ mod tests {
                 value: 0x1_000_000
             })
         ));
+    }
+
+    fn color_set(colors: &[RgbColor]) -> RgbColorSet {
+        RgbColorSet {
+            colors: colors.to_vec(),
+        }
     }
 
     fn blank_image(width: u32, height: u32) -> RgbaImage {

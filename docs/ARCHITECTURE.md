@@ -73,7 +73,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 
 ### TestsConfig
 
-`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
+`TestsConfig` groups a separate configuration struct for each test case. It exposes `ShadowrunCdTestConfig` for the gameplay menus and `ShadowrunDialogTestConfig` for the intro dialog box. Each owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -130,8 +130,8 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
-  "framesDetectionBackgroundColor": 0x000000,
-  "framesDetectionTextColor": 0xfcfcfc
+  "framesDetectionBackgroundColors": [0x000000],
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff]
 }
 ```
 
@@ -148,9 +148,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 `ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions.
 
-`FramesDetectorSourcer` uses the same fixed image, is the selected source, and reads `framesDetectionBackgroundColor` and `framesDetectionTextColor` from `ApplicationConfig`. Both values are 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`.
+`FramesDetectorSourcer` uses the fixed `Shadowrun_02.png` image when created through the factory and reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. A pixel matches a color set when it equals any color in that set. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` directly with the same configured color arrays.
 
-The detector produces two frames for the sample image. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel is validated independently.
+The detector produces two frames for `Shadowrun_02.png` and one frame for `Shadowrun_01.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
 
 Because the application configuration remains focused on implementation selection and the two detector colors, other backend-specific settings are constants inside implementations rather than configuration values.
 
@@ -182,6 +182,21 @@ Because the application configuration remains focused on implementation selectio
       "Contacts": ["Contact Us", "Traffic1.", "person 2.", "Traffic 9."]
     },
     "timeoutSeconds": 5
+  },
+  "shadowrun_dialog": {
+    "frames": [
+      {
+        "name": "Dialog",
+        "rect": { "x": 26, "y": 158, "width": 267, "height": 52 }
+      }
+    ],
+    "expectedResultOCR": {
+      "Dialog": ["意外に手ごたえのない", "連中だったわね"]
+    },
+    "expectedTranslationResult": {
+      "Dialog": ["Unexpected", "It was a long time."]
+    },
+    "timeoutSeconds": 5
   }
 }
 ```
@@ -194,7 +209,7 @@ Because the application configuration remains focused on implementation selectio
 | `FramesDetectorSourcer` | `FramesSourcer` | Finds connected background-color components that contain text-color pixels and extracts each component as a frame | Exact color match and fixed size and density thresholds |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
-| `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
+| `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines with horizontal ink padding and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
 | `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
@@ -206,7 +221,7 @@ Because the application configuration remains focused on implementation selectio
 
 `SdlThreeTextRenderer` resolves a frame placement by matching the configured frame name first. Detector-generated names do not match the descriptive names in `tests-config.jsonc`, so the renderer falls back to exact frame dimensions. Equal-sized detected frames resolve to the first configured match.
 
-`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line with vertical padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
+`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line to its horizontal ink extent with vertical and horizontal padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
 
 ```mermaid
 sequenceDiagram
@@ -249,19 +264,21 @@ Integration tests live in `tests/`:
 - `frames_sourcer_test.rs` validates both detected frames against the expected names, positions, dimensions, and crop pixels from `tests-config.jsonc`.
 - `frames_ocr_test.rs` validates four OCR lines per detected frame using the `expectedResultOCR` dictionary keyed by expected frame name.
 - `shadowrun_cd_pipeline_test.rs` validates four translations per detected frame using the `expectedTranslationResult` dictionary and renders both frames.
-- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_02.png` directly with the configured detection colors, asserts the detected panel order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
+- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_02.png` and `test-case/Shadowrun_01.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
+- `shadowrun_dialog_pipeline_test.rs` runs the `Shadowrun_01.png` dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting both recognized lines, both translations, and the rendered blocks.
 - `application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates its contents, and round-trips it through JSONC serialization and deserialization.
 
 Coverage includes:
 
 - PNG decoding, detected frame dimensions and crop pixel fidelity,
-- color-based frame detection of both menu panels, reading-order output, detection thresholds, and invalid color rejection,
+- color-based frame detection of both menu panels and the intro dialog box, reading-order output, multi-color matching, detection thresholds, and invalid color rejection,
 - source termination,
 - exact per-frame OCR regions and frame containment,
-- Manga OCR protocol response parsing, four-line segmentation, and real `"Actions Menu"` and `"Contacts"` text extraction,
+- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, and `"Dialog"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
+- full Shadowrun intro dialog detection to OCR to translation to block-rendering pipeline,
 - SDL preview timeout behavior,
 - single and batch translation,
 - unknown dictionary entries,
@@ -321,4 +338,4 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus `FramesDetectorSourcer` colors.
-- `FramesDetectorSourcer` requires exact background and text color matches and fixed detection thresholds.
+- `FramesDetectorSourcer` requires exact matches against the configured background and text color arrays and uses fixed detection thresholds.
