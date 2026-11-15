@@ -175,7 +175,20 @@ fn load_tests_config(path: &Path) -> Result<TestsConfig, RenderingError> {
 }
 
 fn find_frame_placement(tests_config: &TestsConfig, frame: &Frame) -> Option<Bounds> {
-    let named_rects = tests_config.shadowrun_cd().frames().frames();
+    test_case_frames(tests_config)
+        .into_iter()
+        .find_map(|named_rects| find_frame_in_frames(named_rects, frame))
+}
+
+fn test_case_frames(tests_config: &TestsConfig) -> [&[NamedRect]; 3] {
+    [
+        tests_config.shadowrun_cd().frames().frames(),
+        tests_config.shadowrun_dialog().frames().frames(),
+        tests_config.shadowrun_street().frames().frames(),
+    ]
+}
+
+fn find_frame_in_frames(named_rects: &[NamedRect], frame: &Frame) -> Option<Bounds> {
     named_rects
         .iter()
         .find(|named_rect| named_rect.name() == frame.name())
@@ -227,6 +240,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn finds_dialog_frame_placement_by_frame_dimensions() {
+        let frame = frame("Detected Frame 1", 267, 52);
+        assert_eq!(
+            find_frame_placement(&tests_config(), &frame),
+            Some(Bounds::new(26, 158, 267, 52))
+        );
+    }
+
     fn tests_config() -> TestsConfig {
         TestsConfig::new(
             ShadowrunCdTestConfig::new(
@@ -239,13 +261,19 @@ mod tests {
                 5,
             ),
             ShadowrunDialogTestConfig::new(
-                FramesConfig::new(Vec::new()),
+                FramesConfig::new(vec![NamedRect::new(
+                    "Dialog",
+                    Bounds::new(26, 158, 267, 52),
+                )]),
                 BTreeMap::new(),
                 BTreeMap::new(),
                 5,
             ),
             ShadowrunStreetTestConfig::new(
-                FramesConfig::new(Vec::new()),
+                FramesConfig::new(vec![NamedRect::new(
+                    "Street Dialog",
+                    Bounds::new(26, 158, 267, 52),
+                )]),
                 BTreeMap::new(),
                 BTreeMap::new(),
                 5,
