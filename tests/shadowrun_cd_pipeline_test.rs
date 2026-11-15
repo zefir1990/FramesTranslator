@@ -7,26 +7,35 @@ use frames_translator::factory::{
     create_frames_ocr, create_frames_sourcer, create_text_renderer, create_text_translator,
 };
 
-const EXPECTED_FRAME_COUNT: usize = 1;
-const EXPECTED_FRAME_NAME: &str = "Actions Menu";
-const EXPECTED_LINE_COUNT: usize = 4;
+const EXPECTED_FRAME_COUNT: usize = 2;
 
 #[test]
-fn shadowrun_cd_pipeline_recognizes_and_translates_four_lines() -> Result<(), Box<dyn Error>> {
+fn shadowrun_cd_pipeline_recognizes_and_translates_each_detected_frame()
+-> Result<(), Box<dyn Error>> {
     let application_config = support::load_application_config()?;
     let tests_config = support::load_tests_config()?;
     let shadowrun_cd = tests_config.shadowrun_cd();
-    let expected_texts = shadowrun_cd.expected_result_ocr();
-    let expected_translations = shadowrun_cd.expected_translation_result();
-    assert_eq!(expected_texts.len(), EXPECTED_LINE_COUNT);
-    assert_eq!(expected_translations.len(), EXPECTED_LINE_COUNT);
+    let expected_frames = shadowrun_cd.frames().frames();
+    assert_eq!(expected_frames.len(), EXPECTED_FRAME_COUNT);
     let mut frames_sourcer = create_frames_sourcer(&application_config)?;
     let frames_ocr = create_frames_ocr(&application_config)?;
     let mut text_translator = create_text_translator(&application_config)?;
     let text_renderer = create_text_renderer(&application_config)?;
     let mut frame_count = 0;
     while let Some(frame) = frames_sourcer.next_frame()? {
-        assert_eq!(frame.name(), EXPECTED_FRAME_NAME);
+        let expected_frame = expected_frames
+            .get(frame_count)
+            .expect("the detector must not produce more frames than expected");
+        let expected_texts = shadowrun_cd
+            .expected_result_ocr()
+            .get(expected_frame.name())
+            .expect("every expected frame must define OCR lines");
+        let expected_translations = shadowrun_cd
+            .expected_translation_result()
+            .get(expected_frame.name())
+            .expect("every expected frame must define translations");
+        assert_eq!(frame.width(), expected_frame.rect().width());
+        assert_eq!(frame.height(), expected_frame.rect().height());
         let regions = frames_ocr.recognize(&frame)?;
         assert_eq!(regions.len(), expected_texts.len());
         for (region, expected_text) in regions.iter().zip(expected_texts) {

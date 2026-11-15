@@ -175,13 +175,20 @@ fn load_tests_config(path: &Path) -> Result<TestsConfig, RenderingError> {
 }
 
 fn find_frame_placement(tests_config: &TestsConfig, frame: &Frame) -> Option<Bounds> {
-    tests_config
-        .shadowrun_cd()
-        .frames()
-        .frames()
+    let named_rects = tests_config.shadowrun_cd().frames().frames();
+    named_rects
         .iter()
         .find(|named_rect| named_rect.name() == frame.name())
+        .or_else(|| {
+            named_rects
+                .iter()
+                .find(|named_rect| matches_frame_dimensions(named_rect.rect(), frame))
+        })
         .map(NamedRect::rect)
+}
+
+fn matches_frame_dimensions(bounds: Bounds, frame: &Frame) -> bool {
+    bounds.width() == frame.width() && bounds.height() == frame.height()
 }
 
 fn rendering_failed(path: &Path, error: image::ImageError) -> RenderingError {
@@ -190,4 +197,53 @@ fn rendering_failed(path: &Path, error: image::ImageError) -> RenderingError {
 
 fn manifest_path(relative_path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    use crate::frames_config::{FramesConfig, NamedRect};
+    use crate::tests_config::ShadowrunCdTestConfig;
+
+    #[test]
+    fn finds_frame_placement_by_frame_name() {
+        let frame = frame("Actions Menu", 91, 68);
+        assert_eq!(
+            find_frame_placement(&tests_config(), &frame),
+            Some(Bounds::new(18, 86, 91, 68))
+        );
+    }
+
+    #[test]
+    fn finds_frame_placement_by_frame_dimensions() {
+        let frame = frame("Detected Frame 2", 75, 68);
+        assert_eq!(
+            find_frame_placement(&tests_config(), &frame),
+            Some(Bounds::new(146, 86, 75, 68))
+        );
+    }
+
+    fn tests_config() -> TestsConfig {
+        TestsConfig::new(ShadowrunCdTestConfig::new(
+            FramesConfig::new(vec![
+                NamedRect::new("Actions Menu", Bounds::new(18, 86, 91, 68)),
+                NamedRect::new("Contacts", Bounds::new(146, 86, 75, 68)),
+            ]),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            5,
+        ))
+    }
+
+    fn frame(name: &str, width: u32, height: u32) -> Frame {
+        Frame::new(
+            name,
+            width,
+            height,
+            vec![0; width as usize * height as usize * 4],
+        )
+        .expect("the frame buffer must match its dimensions")
+    }
 }

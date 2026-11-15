@@ -58,11 +58,11 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 
 ## Configuration
 
-`ApplicationConfig` contains implementation class names only. The test application configuration is `test-case/tests-application-config.jsonc`:
+`ApplicationConfig` contains implementation class names and the detector colors. The test application configuration is `test-case/tests-application-config.jsonc`:
 
 ```jsonc
 {
-  "framesSourcer": "ImageFramesSourcer",
+  "framesSourcer": "FramesDetectorSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
@@ -71,15 +71,17 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 }
 ```
 
-`framesDetectionBackgroundColor` and `framesDetectionTextColor` are 24-bit RGB values used by `FramesDetectorSourcer`. `ImageFramesSourcer` remains the selected source, so extraction still uses the named frames in `tests-config.jsonc`.
+`framesDetectionBackgroundColor` and `framesDetectionTextColor` are 24-bit RGB values used by `FramesDetectorSourcer`, which is the selected source. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
-`ImageFramesSourcer` uses `test-case/Shadowrun_02.png` and extracts the named frames defined in `test-case/tests-config.jsonc` when constructed through the factory. Its public `open(path, frames_config)` constructor accepts explicit paths and frame definitions.
+`FramesDetectorSourcer` uses `test-case/Shadowrun_02.png` and the two detection colors when constructed through the factory. It detects the two menu panels in reading order and names them `Detected Frame 1` and `Detected Frame 2`.
+
+`ImageFramesSourcer` remains available and extracts the named frames defined in `test-case/tests-config.jsonc` when selected. Its public `open(path, frames_config)` constructor accepts explicit paths and frame definitions.
 
 `ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
 
-`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. It includes the expected OCR lines under `expectedResultOCR`, the expected translations under `expectedTranslationResult`, and the SDL preview duration under `timeoutSeconds`.
+`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. `frames` lists the expected detected frames with their names, positions, and dimensions. `expectedResultOCR` and `expectedTranslationResult` are dictionaries keyed by expected frame name. `timeoutSeconds` sets the SDL preview duration per frame.
 
 ## Concrete implementations
 
@@ -103,14 +105,14 @@ Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels with `FramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
-- `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes four text lines through `MangaFramesOCR`, and asserts the exact line texts.
+- `tests/frames_ocr_test.rs` detects both Shadowrun CD frames through the source factory, recognizes four text lines per frame through `MangaFramesOCR`, and asserts the exact line texts keyed by expected frame name.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
-- `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline and requires four recognized and translated Shadowrun CD menu lines. The SDL window closes after `timeoutSeconds`.
-- `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
+- `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline for both detected frames and requires four recognized and translated lines per frame. The SDL window closes after `timeoutSeconds`.
+- `tests/frames_sourcer_test.rs` constructs the detector through the factory and verifies both detected frames against the configured positions and dimensions in `test-case/tests-config.jsonc`.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
-The sample image is `320x224`, and the configured `"Actions Menu"` frame is `91x68` at `(18, 86)`. Tests assert PNG decoding, configured frame extraction and crop pixels, Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
+The sample image is `320x224`. The detector must produce `"Actions Menu"` at `91x68` and `(18, 86)` followed by `"Contacts"` at `75x68` and `(146, 86)`. Tests assert PNG decoding, detected dimensions and crop pixels, per-frame Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
 
 When adding an implementation:
 

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::frames_config::FramesConfig;
 use serde::{Deserialize, Serialize};
 
@@ -29,9 +31,9 @@ pub struct ShadowrunCdTestConfig {
     #[serde(flatten)]
     frames: FramesConfig,
     #[serde(rename = "expectedResultOCR")]
-    expected_result_ocr: Vec<String>,
+    expected_result_ocr: BTreeMap<String, Vec<String>>,
     #[serde(rename = "expectedTranslationResult")]
-    expected_translation_result: Vec<String>,
+    expected_translation_result: BTreeMap<String, Vec<String>>,
     #[serde(rename = "timeoutSeconds")]
     timeout_seconds: u64,
 }
@@ -39,8 +41,8 @@ pub struct ShadowrunCdTestConfig {
 impl ShadowrunCdTestConfig {
     pub fn new(
         frames: FramesConfig,
-        expected_result_ocr: Vec<String>,
-        expected_translation_result: Vec<String>,
+        expected_result_ocr: BTreeMap<String, Vec<String>>,
+        expected_translation_result: BTreeMap<String, Vec<String>>,
         timeout_seconds: u64,
     ) -> Self {
         Self {
@@ -55,11 +57,11 @@ impl ShadowrunCdTestConfig {
         &self.frames
     }
 
-    pub fn expected_result_ocr(&self) -> &[String] {
+    pub fn expected_result_ocr(&self) -> &BTreeMap<String, Vec<String>> {
         &self.expected_result_ocr
     }
 
-    pub fn expected_translation_result(&self) -> &[String] {
+    pub fn expected_translation_result(&self) -> &BTreeMap<String, Vec<String>> {
         &self.expected_translation_result
     }
 
@@ -76,22 +78,38 @@ mod tests {
 
     #[test]
     fn tests_config_exposes_shadowrun_cd_test_config() {
-        let frames_config = FramesConfig::new(vec![NamedRect::new(
-            "Actions Menu",
-            Bounds::new(18, 86, 91, 68),
-        )]);
-        let expected_result_ocr = vec![
-            "見る".to_owned(),
-            "話す".to_owned(),
-            "移動".to_owned(),
-            "アイテム".to_owned(),
-        ];
-        let expected_translation_result = vec![
-            "See".to_owned(),
-            "Talk".to_owned(),
-            "Contact Us".to_owned(),
-            "Item.".to_owned(),
-        ];
+        let frames_config = FramesConfig::new(vec![
+            NamedRect::new("Actions Menu", Bounds::new(18, 86, 91, 68)),
+            NamedRect::new("Contacts", Bounds::new(146, 86, 75, 68)),
+        ]);
+        let expected_result_ocr = BTreeMap::from([
+            (
+                "Actions Menu".to_owned(),
+                ["見る", "話す", "移動", "アイテム"]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
+            (
+                "Contacts".to_owned(),
+                ["仲間", "通行人１", "通行人２", "通行人９"]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
+        ]);
+        let expected_translation_result = BTreeMap::from([
+            (
+                "Actions Menu".to_owned(),
+                ["See", "Talk", "Contact Us", "Item."]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
+            (
+                "Contacts".to_owned(),
+                ["Contact Us", "Traffic1.", "person 2.", "Traffic 9."]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
+        ]);
         let tests_config = TestsConfig::new(ShadowrunCdTestConfig::new(
             frames_config,
             expected_result_ocr.clone(),
@@ -99,13 +117,17 @@ mod tests {
             5,
         ));
         let shadowrun_cd = tests_config.shadowrun_cd();
+        assert_eq!(shadowrun_cd.frames().frames().len(), 2);
         let actions_menu = &shadowrun_cd.frames().frames()[0];
         assert_eq!(actions_menu.name(), "Actions Menu");
         assert_eq!(actions_menu.rect(), Bounds::new(18, 86, 91, 68));
-        assert_eq!(shadowrun_cd.expected_result_ocr(), expected_result_ocr);
+        let contacts = &shadowrun_cd.frames().frames()[1];
+        assert_eq!(contacts.name(), "Contacts");
+        assert_eq!(contacts.rect(), Bounds::new(146, 86, 75, 68));
+        assert_eq!(shadowrun_cd.expected_result_ocr(), &expected_result_ocr);
         assert_eq!(
             shadowrun_cd.expected_translation_result(),
-            expected_translation_result
+            &expected_translation_result
         );
         assert_eq!(shadowrun_cd.timeout_seconds(), 5);
     }

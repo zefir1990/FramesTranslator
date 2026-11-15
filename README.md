@@ -33,8 +33,8 @@ Core models:
 
 | Interface | Concrete type | Behavior |
 | --- | --- | --- |
+| `FramesSourcer` | `FramesDetectorSourcer` | Detects frames in `test-case/Shadowrun_02.png` as connected background-color regions that contain text-color pixels. |
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
-| `FramesSourcer` | `FramesDetectorSourcer` | Detects frames as connected background-color regions that contain text-color pixels. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
 | `FramesOCR` | `MangaFramesOCR` | Splits frames into text lines and runs Manga OCR per line. |
@@ -51,7 +51,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 ```jsonc
 {
-  "framesSourcer": "ImageFramesSourcer",
+  "framesSourcer": "FramesDetectorSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
@@ -62,7 +62,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 `ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColor` and `framesDetectionTextColor` are 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
-Test-case frame layouts are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
+Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. `frames` lists the expected detected frames with their positions and dimensions. `expectedResultOCR` and `expectedTranslationResult` are dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
 ## Library usage
 
@@ -142,7 +142,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, color-based frame detection, frame exhaustion, OCR region bounds, four-line extraction, batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, color-based detection of both Shadowrun CD panels, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

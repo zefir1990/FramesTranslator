@@ -1,7 +1,7 @@
 {
   "shadowrun_cd": {
     "frames": [
-      // "Actions Menu" is used as main gameplay menu in Shadowrun CD
+      // "Actions Menu" is the main gameplay menu in Shadowrun CD
       {
         "name": "Actions Menu",
         "rect": {
@@ -10,20 +10,46 @@
           "width": 91,
           "height": 68
         }
+      },
+      // "Contacts" lists nearby characters in Shadowrun CD
+      {
+        "name": "Contacts",
+        "rect": {
+          "x": 146,
+          "y": 86,
+          "width": 75,
+          "height": 68
+        }
       }
     ],
-    "expectedResultOCR": [
-      "見る",
-      "話す",
-      "移動",
-      "アイテム"
-    ],
-    "expectedTranslationResult": [
-      "See",
-      "Talk",
-      "Contact Us",
-      "Item."
-    ],
+    "expectedResultOCR": {
+      "Actions Menu": [
+        "見る",
+        "話す",
+        "移動",
+        "アイテム"
+      ],
+      "Contacts": [
+        "仲間",
+        "通行人１",
+        "通行人２",
+        "通行人９"
+      ]
+    },
+    "expectedTranslationResult": {
+      "Actions Menu": [
+        "See",
+        "Talk",
+        "Contact Us",
+        "Item."
+      ],
+      "Contacts": [
+        "Contact Us",
+        "Traffic1.",
+        "person 2.",
+        "Traffic 9."
+      ]
+    },
     "timeoutSeconds": 5
   }
 }

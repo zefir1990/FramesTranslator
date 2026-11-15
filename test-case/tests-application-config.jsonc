@@ -1,5 +1,5 @@
 {
-  "framesSourcer": "ImageFramesSourcer",
+  "framesSourcer": "FramesDetectorSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
