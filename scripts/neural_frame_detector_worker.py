@@ -1,145 +1,139 @@
 import json
 import sys
+from collections import Counter
 
 import numpy as np
 import torch
 from PIL import Image
 from torch import nn
 
-BACKGROUND_TOLERANCE = 8
-TEXT_TOLERANCE = 32
-MINIMUM_FRAME_WIDTH = 16
-MINIMUM_FRAME_HEIGHT = 16
-MINIMUM_TEXT_PIXEL_COUNT = 16
-MINIMUM_BACKGROUND_SHARE_PERCENT = 50
+COLOR_TOLERANCE = 8
+MAXIMUM_COLOR_COUNT = 16
+MINIMUM_COMPONENT_AREA = 400
+MINIMUM_CANDIDATE_WIDTH = 32
+MINIMUM_CANDIDATE_HEIGHT = 24
+MINIMUM_CANDIDATE_SHARE_PERCENT = 60
+CONTRAST_THRESHOLD = 32
+FEATURE_COUNT = 6
+TRAINING_SAMPLE_COUNT = 24000
 TRAINING_EPOCH_COUNT = 20
-TRAINING_BATCH_SIZE = 4096
-LEARNING_RATE = 0.02
+TRAINING_BATCH_SIZE = 2048
+LEARNING_RATE = 0.01
 RANDOM_SEED = 1234
-BACKGROUND_CLASS = 0
-TEXT_CLASS = 1
-OTHER_CLASS = 2
+POSITIVE_THRESHOLD = 0.5
 
 
 def write_response(**payload):
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
-def parse_colors(argument):
-    return [
-        (
-            (int(value) >> 16) & 0xFF,
-            (int(value) >> 8) & 0xFF,
-            int(value) & 0xFF,
-        )
-        for value in argument.split(",")
-        if value
-    ]
-
-
-def label_colors(colors, background_colors, text_colors):
-    labels = np.full(len(colors), OTHER_CLASS, dtype=np.int64)
-    background_colors = np.array(background_colors, dtype=np.int64)
-    text_colors = np.array(text_colors, dtype=np.int64)
-    background_distance = np.abs(
-        colors[:, np.newaxis, :] - background_colors[np.newaxis, :, :]
-    ).max(axis=2)
-    text_distance = np.abs(
-        colors[:, np.newaxis, :] - text_colors[np.newaxis, :, :]
-    ).max(axis=2)
-    labels[background_distance.min(axis=1) <= BACKGROUND_TOLERANCE] = BACKGROUND_CLASS
-    labels[text_distance.min(axis=1) <= TEXT_TOLERANCE] = TEXT_CLASS
-    return labels
-
-
-def generate_training_colors(background_colors, text_colors):
+def generate_training_samples():
     random_generator = np.random.default_rng(RANDOM_SEED)
-    colors = [random_generator.integers(0, 256, size=(6000, 3))]
-    for _ in range(6000):
-        base = background_colors[random_generator.integers(0, len(background_colors))]
-        colors.append(base + random_generator.integers(-24, 25, size=(1, 3)))
-    for _ in range(6000):
-        base = text_colors[random_generator.integers(0, len(text_colors))]
-        colors.append(base + random_generator.integers(-48, 49, size=(1, 3)))
-    background_array = np.array(background_colors, dtype=np.float64)
-    text_array = np.array(text_colors, dtype=np.float64)
-    for _ in range(6000):
-        background = background_array[random_generator.integers(0, len(background_array))]
-        text = text_array[random_generator.integers(0, len(text_array))]
-        alpha = random_generator.random()
-        blend = alpha * text + (1.0 - alpha) * background
-        colors.append(blend + random_generator.normal(0.0, 4.0, size=(1, 3)))
-    return np.clip(np.concatenate(colors), 0, 255)
+    positive_count = TRAINING_SAMPLE_COUNT // 2
+    negative_count = TRAINING_SAMPLE_COUNT - positive_count
+    positive_width = random_generator.uniform(0.05, 0.98, positive_count)
+    positive_height = random_generator.uniform(0.04, 0.98, positive_count)
+    positive_fill = random_generator.uniform(0.6, 1.0, positive_count)
+    positive_contrast = random_generator.uniform(0.01, 0.5, positive_count)
+    positive_aspect = random_generator.uniform(0.5, 8.0, positive_count)
+    positive_features = np.stack(
+        [
+            positive_width,
+            positive_height,
+            positive_aspect / 10.0,
+            positive_fill,
+            positive_contrast,
+            positive_width * positive_height,
+        ],
+        axis=1,
+    )
+    negative_width = random_generator.uniform(0.02, 0.98, negative_count)
+    negative_height = random_generator.uniform(0.02, 0.98, negative_count)
+    negative_fill = random_generator.uniform(0.05, 0.58, negative_count)
+    negative_contrast = random_generator.uniform(0.0, 1.0, negative_count)
+    negative_aspect = random_generator.uniform(0.1, 20.0, negative_count)
+    negative_features = np.stack(
+        [
+            negative_width,
+            negative_height,
+            negative_aspect / 10.0,
+            negative_fill,
+            negative_contrast,
+            negative_width * negative_height,
+        ],
+        axis=1,
+    )
+    uniform_indices = random_generator.choice(
+        negative_count, size=negative_count // 3, replace=False
+    )
+    negative_features[uniform_indices, 3] = random_generator.uniform(0.9, 1.0, len(uniform_indices))
+    negative_features[uniform_indices, 4] = random_generator.uniform(0.0, 0.005, len(uniform_indices))
+    thin_indices = random_generator.choice(
+        negative_count, size=negative_count // 4, replace=False
+    )
+    negative_features[thin_indices, 0] = random_generator.uniform(0.01, 0.06, len(thin_indices))
+    features = np.concatenate([positive_features, negative_features]).astype(np.float32)
+    labels = np.concatenate(
+        [np.ones(positive_count, dtype=np.float32), np.zeros(negative_count, dtype=np.float32)]
+    )
+    permutation = random_generator.permutation(len(features))
+    return features[permutation], labels[permutation]
 
 
-class PixelClassifier(nn.Module):
+class FrameClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv2d(3, 32, 1),
+            nn.Linear(FEATURE_COUNT, 32),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 1),
+            nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Conv2d(32, 3, 1),
+            nn.Linear(32, 1),
         )
 
-    def forward(self, pixels):
-        return self.layers(pixels)
+    def forward(self, features):
+        return self.layers(features)
 
 
-def train_classifier(background_colors, text_colors):
+def train_classifier():
     torch.manual_seed(RANDOM_SEED)
     torch.set_num_threads(4)
-    training_colors = generate_training_colors(background_colors, text_colors)
-    training_labels = torch.from_numpy(
-        label_colors(training_colors, background_colors, text_colors)
-    )
-    training_pixels = torch.from_numpy(
-        (training_colors / 255.0).astype(np.float32)
-    ).reshape(-1, 3, 1, 1)
-    classifier = PixelClassifier()
+    features, labels = generate_training_samples()
+    feature_tensor = torch.from_numpy(features)
+    label_tensor = torch.from_numpy(labels).unsqueeze(1)
+    classifier = FrameClassifier()
     optimizer = torch.optim.Adam(classifier.parameters(), lr=LEARNING_RATE)
-    loss_function = nn.CrossEntropyLoss()
-    color_count = len(training_pixels)
+    loss_function = nn.BCEWithLogitsLoss()
     classifier.train()
+    sample_count = len(feature_tensor)
     for _ in range(TRAINING_EPOCH_COUNT):
-        permutation = torch.randperm(color_count)
-        for start in range(0, color_count, TRAINING_BATCH_SIZE):
+        permutation = torch.randperm(sample_count)
+        for start in range(0, sample_count, TRAINING_BATCH_SIZE):
             indices = permutation[start : start + TRAINING_BATCH_SIZE]
             optimizer.zero_grad()
-            loss = loss_function(
-                classifier(training_pixels[indices]).reshape(-1, 3),
-                training_labels[indices],
-            )
+            loss = loss_function(classifier(feature_tensor[indices]), label_tensor[indices])
             loss.backward()
             optimizer.step()
     classifier.eval()
     return classifier
 
 
-def classify_image(classifier, image):
-    pixels = torch.from_numpy((image / 255.0).astype(np.float32)).permute(2, 0, 1)
-    with torch.no_grad():
-        logits = classifier(pixels.unsqueeze(0))
-    return logits.argmax(dim=1)[0].cpu().numpy()
-
-
-def trace_background_components(background_mask, text_mask):
-    height, width = background_mask.shape
+def component_bounds(mask):
+    height, width = mask.shape
     visited = np.zeros((height, width), dtype=bool)
-    detected_bounds = []
+    components = []
     for start_y in range(height):
         for start_x in range(width):
-            if not background_mask[start_y, start_x] or visited[start_y, start_x]:
+            if not mask[start_y, start_x] or visited[start_y, start_x]:
                 continue
             stack = [(start_x, start_y)]
             visited[start_y, start_x] = True
             minimum_x = maximum_x = start_x
             minimum_y = maximum_y = start_y
-            background_pixel_count = 0
+            area = 0
             while stack:
                 x, y = stack.pop()
-                background_pixel_count += 1
+                area += 1
                 minimum_x = min(minimum_x, x)
                 maximum_x = max(maximum_x, x)
                 minimum_y = min(minimum_y, y)
@@ -153,56 +147,99 @@ def trace_background_components(background_mask, text_mask):
                     if (
                         0 <= neighbour_x < width
                         and 0 <= neighbour_y < height
-                        and background_mask[neighbour_y, neighbour_x]
+                        and mask[neighbour_y, neighbour_x]
                         and not visited[neighbour_y, neighbour_x]
                     ):
                         visited[neighbour_y, neighbour_x] = True
                         stack.append((neighbour_x, neighbour_y))
-            bounds = (
-                minimum_x,
-                minimum_y,
-                maximum_x - minimum_x + 1,
-                maximum_y - minimum_y + 1,
+            components.append(
+                (
+                    area,
+                    (
+                        minimum_x,
+                        minimum_y,
+                        maximum_x - minimum_x + 1,
+                        maximum_y - minimum_y + 1,
+                    ),
+                    np.array([start_x, start_y], dtype=np.int64),
+                )
             )
-            if is_text_frame(background_pixel_count, bounds, text_mask):
-                detected_bounds.append(bounds)
-    detected_bounds.sort(key=lambda bounds: (bounds[1], bounds[0]))
-    return detected_bounds
+    return components
 
 
-def is_text_frame(background_pixel_count, bounds, text_mask):
+def box_iou(first, second):
+    first_x, first_y, first_width, first_height = first
+    second_x, second_y, second_width, second_height = second
+    intersection_x = max(first_x, second_x)
+    intersection_y = max(first_y, second_y)
+    intersection_width = min(first_x + first_width, second_x + second_width) - intersection_x
+    intersection_height = min(first_y + first_height, second_y + second_height) - intersection_y
+    if intersection_width <= 0 or intersection_height <= 0:
+        return 0.0
+    intersection_area = intersection_width * intersection_height
+    union_area = first_width * first_height + second_width * second_height - intersection_area
+    return intersection_area / union_area
+
+
+def extract_features(image, bounds, color):
     x, y, width, height = bounds
-    if width < MINIMUM_FRAME_WIDTH or height < MINIMUM_FRAME_HEIGHT:
-        return False
-    if text_mask[y : y + height, x : x + width].sum() < MINIMUM_TEXT_PIXEL_COUNT:
-        return False
-    return (
-        background_pixel_count * 100
-        >= width * height * MINIMUM_BACKGROUND_SHARE_PERCENT
+    region = image[y : y + height, x : x + width]
+    color_difference = np.max(np.abs(region - color), axis=2)
+    background_count = int((color_difference <= COLOR_TOLERANCE).sum())
+    contrast_count = int((color_difference > CONTRAST_THRESHOLD).sum())
+    area = width * height
+    image_height, image_width, _ = image.shape
+    return np.array(
+        [
+            width / image_width,
+            height / image_height,
+            (width / height) / 10.0,
+            background_count / area,
+            contrast_count / area,
+            area / (image_width * image_height),
+        ],
+        dtype=np.float32,
     )
 
 
 def detect_bounds(classifier, image_path):
-    image = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.float64)
-    classes = classify_image(classifier, image)
-    return trace_background_components(classes == BACKGROUND_CLASS, classes == TEXT_CLASS)
+    image = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.int64)
+    image_height, image_width, _ = image.shape
+    color_counter = Counter(map(tuple, image.reshape(-1, 3).astype(np.uint8)))
+    accepted_bounds = []
+    candidates = []
+    for color, _ in color_counter.most_common(MAXIMUM_COLOR_COUNT):
+        color_array = np.array(color, dtype=np.int64)
+        mask = np.max(np.abs(image - color_array), axis=2) <= COLOR_TOLERANCE
+        for area, bounds, seed in component_bounds(mask):
+            x, y, width, height = bounds
+            if area < MINIMUM_COMPONENT_AREA:
+                continue
+            if width < MINIMUM_CANDIDATE_WIDTH or height < MINIMUM_CANDIDATE_HEIGHT:
+                continue
+            if area * 100 < width * height * MINIMUM_CANDIDATE_SHARE_PERCENT:
+                continue
+            candidates.append((bounds, color_array, seed))
+    with torch.no_grad():
+        for bounds, color_array, _ in candidates:
+            features = extract_features(image, bounds, color_array)
+            score = torch.sigmoid(classifier(torch.from_numpy(features).unsqueeze(0)))[0, 0].item()
+            if score < POSITIVE_THRESHOLD:
+                continue
+            if any(box_iou(bounds, accepted) > 0.9 for accepted in accepted_bounds):
+                continue
+            accepted_bounds.append(bounds)
+    accepted_bounds.sort(key=lambda bounds: (bounds[1], bounds[0]))
+    return accepted_bounds
 
 
 def main():
-    if len(sys.argv) != 3:
-        print(
-            "usage: neural_frame_detector_worker.py BACKGROUND_COLORS TEXT_COLORS",
-            file=sys.stderr,
-        )
-        return 2
-    background_colors = parse_colors(sys.argv[1])
-    text_colors = parse_colors(sys.argv[2])
-    if not background_colors or not text_colors:
-        print("at least one background and text color are required", file=sys.stderr)
+    if len(sys.argv) != 1:
+        print("usage: neural_frame_detector_worker.py", file=sys.stderr)
         return 2
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    classifier = train_classifier(background_colors, text_colors)
+    classifier = train_classifier()
     print(json.dumps({"ready": True}), flush=True)
     for line in sys.stdin:
         image_path = line.strip()

@@ -160,11 +160,11 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 `ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions.
 
-`ProceduralFramesDetectorSourcer` and `NeuralNetworkFramesDetectorSourcer` use the fixed `Shadowrun_02.png` image when created through `create_frames_sourcer`, and read `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` through `Shadowrun_04.png` directly with the same configured color arrays.
+Both detector implementations use the fixed `Shadowrun_02.png` image when created through `create_frames_sourcer`. `ProceduralFramesDetectorSourcer` reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` through `Shadowrun_04.png` directly with the same configured color arrays.
 
 `ProceduralFramesDetectorSourcer` matches a color set when every channel is within a fixed tolerance of any color in that set: 8 for background colors and 32 for text colors. The text tolerance handles upscaled screenshots whose anti-aliased glyphs are gray instead of the configured near-white.
 
-`NeuralNetworkFramesDetectorSourcer` starts a persistent `.venv/Scripts/python.exe` worker with `scripts/neural_frame_detector_worker.py`. The worker trains a small PyTorch pointwise CNN on synthetic background, text, and anti-aliased colors, classifies each image pixel, traces background components, and returns frame bounds. Both implementations produce two frames for `Shadowrun_02.png` and one frame each for `Shadowrun_01.png`, `Shadowrun_03.png`, and `Shadowrun_04.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
+`NeuralNetworkFramesDetectorSourcer` starts a persistent `.venv/Scripts/python.exe` worker with `scripts/neural_frame_detector_worker.py` and does not receive configured colors. The worker proposes candidate regions from the image's dominant colors, computes structural features (normalized size, aspect ratio, fill share, contrast density, and area share), and validates each candidate with a locally trained PyTorch classifier. Both implementations produce two frames for `Shadowrun_02.png` and one frame each for `Shadowrun_01.png`, `Shadowrun_03.png`, and `Shadowrun_04.png`. The same neural detector also finds the beige `Banana_01.png` dialog at `(24, 199, 460, 246)` without any palette configuration. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
 
 Because the application configuration remains focused on implementation selection and the two detector colors, other backend-specific settings are constants inside implementations rather than configuration values.
 
@@ -268,7 +268,7 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 | --- | --- | --- | --- |
 | `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG and extracts the named frame rectangles from `TestsConfig` | Single image, no video or directory input |
 | `ProceduralFramesDetectorSourcer` | `FramesSourcer` | Finds connected background-color components that contain text-color pixels and extracts each component as a frame | Fixed color tolerances and size and density thresholds |
-| `NeuralNetworkFramesDetectorSourcer` | `FramesSourcer` | Trains a local PyTorch pixel classifier, finds connected background components, and extracts frames | Retrains per worker start; Japanese/local model setup required |
+| `NeuralNetworkFramesDetectorSourcer` | `FramesSourcer` | Proposes dominant-color regions and validates them with a local PyTorch structural classifier | Retrains per worker start; needs local PyTorch |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
 | `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines with horizontal ink padding and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
@@ -327,7 +327,7 @@ Integration tests live in `tests/`:
 - `frames_ocr_test.rs` validates four OCR lines per detected frame using the `expectedResultOCR` dictionary keyed by expected frame name.
 - `shadowrun_cd_pipeline_test.rs` validates four translations per detected frame using the `expectedTranslationResult` dictionary and renders both frames.
 - `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_01.png` through `test-case/Shadowrun_04.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `ProceduralFramesDetectorSourcer`.
-- `neural_network_frames_detector_sourcer_test.rs` verifies that `NeuralNetworkFramesDetectorSourcer` finds the expected bounds in all four sample images.
+- `neural_network_frames_detector_sourcer_test.rs` verifies that `NeuralNetworkFramesDetectorSourcer` finds the expected bounds in all four Shadowrun sample images and in `Banana_01.png` without receiving detection colors.
 - `shadowrun_hospital_pipeline_test.rs` runs the upscaled `Shadowrun_04.png` hospital dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting its three lines, translations, and rendered blocks.
 - `shadowrun_dialog_pipeline_test.rs` runs the `Shadowrun_01.png` dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting both recognized lines, both translations, and the rendered blocks.
 - `shadowrun_street_pipeline_test.rs` runs the `Shadowrun_03.png` street dialog through the same pipeline and asserts its two recognized lines, translations, and rendered blocks.
@@ -337,7 +337,7 @@ Integration tests live in `tests/`:
 Coverage includes:
 
 - PNG decoding, detected frame dimensions and crop pixel fidelity,
-- color-based and neural frame detection of both menu panels and the intro, street, and hospital dialog boxes, reading-order output, multi-color matching with tolerance for scaled gray text, detection thresholds, and invalid color rejection,
+- color-based and color-free neural frame detection of both menu panels and the intro, street, hospital, and Banana dialog boxes, reading-order output, multi-color matching with tolerance for scaled gray text, structural candidate validation, detection thresholds, and invalid color rejection,
 - source termination,
 - exact per-frame OCR regions and frame containment,
 - Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, `"Street Dialog"`, and `"Hospital Dialog"` text extraction,
@@ -406,4 +406,4 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus frame detector colors.
 - `ProceduralFramesDetectorSourcer` matches the configured background and text color arrays within fixed channel tolerances and uses fixed detection thresholds.
-- `NeuralNetworkFramesDetectorSourcer` trains its classifier at worker startup and depends on local PyTorch.
+- `NeuralNetworkFramesDetectorSourcer` trains its structural classifier at worker startup, depends on local PyTorch, and uses image-derived dominant colors only for region proposals.

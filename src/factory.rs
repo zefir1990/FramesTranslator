@@ -30,13 +30,9 @@ pub fn create_frames_sourcer(
             config.frames_detection_background_colors(),
             config.frames_detection_text_colors(),
         )?)),
-        "NeuralNetworkFramesDetectorSourcer" => {
-            Ok(Box::new(NeuralNetworkFramesDetectorSourcer::open(
-                manifest_path(DEFAULT_IMAGE_PATH),
-                config.frames_detection_background_colors(),
-                config.frames_detection_text_colors(),
-            )?))
-        }
+        "NeuralNetworkFramesDetectorSourcer" => Ok(Box::new(
+            NeuralNetworkFramesDetectorSourcer::open(manifest_path(DEFAULT_IMAGE_PATH))?,
+        )),
         "ImageFramesSourcer" => {
             let tests_config = load_tests_config(manifest_path(DEFAULT_TESTS_CONFIG_PATH))?;
             let image_path = manifest_path(DEFAULT_IMAGE_PATH);
@@ -61,10 +57,7 @@ pub fn create_frames_detector_sourcer(
             config.frames_detection_text_colors(),
         )?)),
         "NeuralNetworkFramesDetectorSourcer" => {
-            Ok(Box::new(NeuralNetworkFramesDetectorSourcer::new(
-                config.frames_detection_background_colors(),
-                config.frames_detection_text_colors(),
-            )?))
+            Ok(Box::new(NeuralNetworkFramesDetectorSourcer::new()?))
         }
         name => Err(FactoryError::UnknownImplementation {
             variable: "framesSourcer",

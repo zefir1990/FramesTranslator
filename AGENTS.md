@@ -78,11 +78,11 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 }
 ```
 
-`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by both frame detector implementations. `FramesDetectorSourcer` is the abstract detector contract. A pixel matches when its channels are within a small tolerance of any configured color in the respective array, which handles anti-aliased text from scaled screenshots. `verboseMode` defaults to `true`; when enabled, the interactive application prints the detected frame count in green at the top-left corner. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
+`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `ProceduralFramesDetectorSourcer`. `FramesDetectorSourcer` is the abstract detector contract. The procedural detector matches pixels within a small channel tolerance of the configured colors, which handles anti-aliased text from scaled screenshots. `NeuralNetworkFramesDetectorSourcer` ignores configured colors. `verboseMode` defaults to `true`; when enabled, the interactive application prints the detected frame count in green at the top-left corner. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
-The selected detector uses `test-case/Shadowrun_02.png` and the two detection color arrays when constructed through `create_frames_sourcer`. `ProceduralFramesDetectorSourcer` matches background and text colors with fixed tolerances. `NeuralNetworkFramesDetectorSourcer` starts `.venv/Scripts/python.exe scripts/neural_frame_detector_worker.py`, trains a small PyTorch pixel classifier on synthetic colors, and returns frame bounds from connected components. Both detect the two menu panels in reading order and name them `Detected Frame 1` and `Detected Frame 2`.
+The selected detector uses `test-case/Shadowrun_02.png` when constructed through `create_frames_sourcer`. `ProceduralFramesDetectorSourcer` matches background and text colors with fixed tolerances. `NeuralNetworkFramesDetectorSourcer` starts `.venv/Scripts/python.exe scripts/neural_frame_detector_worker.py`, proposes regions from dominant image colors, and validates them with a locally trained PyTorch classifier over structural features: normalized size, aspect ratio, fill share, contrast density, and area share. The neural detector never receives configured colors. Both detect the two menu panels in reading order and name them `Detected Frame 1` and `Detected Frame 2`.
 
 `ImageFramesSourcer` remains available and extracts the named frames defined in `test-case/tests-config.jsonc` when selected. Its public `open(path, frames_config)` constructor accepts explicit paths and frame definitions.
 
@@ -96,7 +96,7 @@ The selected detector uses `test-case/Shadowrun_02.png` and the two detection co
 | --- | --- |
 | `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
 | `ProceduralFramesDetectorSourcer` | Detects connected background-color regions containing text-color pixels with fixed tolerances |
-| `NeuralNetworkFramesDetectorSourcer` | Trains a local PyTorch pixel classifier and detects frames from its background/text masks |
+| `NeuralNetworkFramesDetectorSourcer` | Proposes dominant-color regions and validates them with a local PyTorch structural classifier |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
 | `MangaFramesOCR` | Splits frames into text lines with horizontal ink padding and runs Manga OCR per line through a persistent Python worker in `.venv` |
@@ -113,7 +113,7 @@ Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels and the intro, street, and hospital dialog boxes with `ProceduralFramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
-- `tests/neural_network_frames_detector_sourcer_test.rs` verifies that `NeuralNetworkFramesDetectorSourcer` finds the expected bounds in all four sample images.
+- `tests/neural_network_frames_detector_sourcer_test.rs` verifies that `NeuralNetworkFramesDetectorSourcer` finds the expected bounds in all four Shadowrun sample images and in `Banana_01.png` without receiving detection colors.
 - `tests/frames_ocr_test.rs` detects both Shadowrun CD frames through the source factory, recognizes four text lines per frame through `MangaFramesOCR`, and asserts the exact line texts keyed by expected frame name.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
 - `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline for both detected frames and requires four recognized and translated lines per frame. The SDL window closes after `timeoutSeconds`.
@@ -124,7 +124,7 @@ Integration tests are in `tests/`:
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
-`Shadowrun_01.png` through `Shadowrun_03.png` are `320x224`; `Shadowrun_04.png` is an upscaled `488x364` screenshot. For `Shadowrun_02.png`, the detector must produce `"Actions Menu"` at `91x68` and `(18, 86)` followed by `"Contacts"` at `75x68` and `(146, 86)`. For `Shadowrun_01.png`, it must produce the `"Dialog"` box at `267x52` and `(26, 158)`. For `Shadowrun_03.png`, it must produce the `"Street Dialog"` box at `267x52` and `(26, 158)`. For the upscaled `Shadowrun_04.png`, it must produce the `"Hospital Dialog"` box at `411x84` and `(39, 261)`. Tests assert PNG decoding, detected dimensions and crop pixels, per-frame Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
+`Shadowrun_01.png` through `Shadowrun_03.png` are `320x224`; `Shadowrun_04.png` is an upscaled `488x364` screenshot. For `Shadowrun_02.png`, the detector must produce `"Actions Menu"` at `91x68` and `(18, 86)` followed by `"Contacts"` at `75x68` and `(146, 86)`. For `Shadowrun_01.png`, it must produce the `"Dialog"` box at `267x52` and `(26, 158)`. For `Shadowrun_03.png`, it must produce the `"Street Dialog"` box at `267x52` and `(26, 158)`. For the upscaled `Shadowrun_04.png`, it must produce the `"Hospital Dialog"` box at `411x84` and `(39, 261)`. `Banana_01.png` is a `504x467` game-over screen; the neural detector must find its beige dialog at `(24, 199, 460, 246)` without configured detection colors. Tests assert PNG decoding, detected dimensions and crop pixels, per-frame Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
 
 When adding an implementation:
 
@@ -153,7 +153,7 @@ When adding an implementation:
 ## Current limitations
 
 - `ProceduralFramesDetectorSourcer` matches background and text colors within fixed channel tolerances and uses fixed minimum size and density thresholds.
-- `NeuralNetworkFramesDetectorSourcer` retrains a small PyTorch classifier when each worker starts.
+- `NeuralNetworkFramesDetectorSourcer` retrains a small PyTorch structural classifier when each worker starts and uses image-derived dominant colors only for region proposals.
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
 - The application processes each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.

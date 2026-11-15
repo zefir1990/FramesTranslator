@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::frame::Frame;
 use crate::frames_detector_sourcer::{
     DetectedFrame, DetectedFrameQueue, FramesDetectorSourcer, decode_image,
-    detected_frames_from_bounds, validate_colors,
+    detected_frames_from_bounds,
 };
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::text_region::Bounds;
@@ -23,15 +23,11 @@ pub struct NeuralNetworkFramesDetectorSourcer {
 }
 
 impl NeuralNetworkFramesDetectorSourcer {
-    pub fn new(background_colors: &[u32], text_colors: &[u32]) -> Result<Self, FrameSourceError> {
-        validate_colors("background", background_colors)?;
-        validate_colors("text", text_colors)?;
-        let background_colors = format_colors(background_colors);
-        let text_colors = format_colors(text_colors);
+    pub fn new() -> Result<Self, FrameSourceError> {
         let mut worker = PythonWorker::spawn(
             &manifest_path(PYTHON_EXECUTABLE_PATH),
             &manifest_path(DETECTOR_SCRIPT_PATH),
-            &[&background_colors, &text_colors],
+            &[],
         )
         .map_err(detector_failed)?;
         let readiness = worker
@@ -52,13 +48,9 @@ impl NeuralNetworkFramesDetectorSourcer {
         })
     }
 
-    pub fn open(
-        path: impl AsRef<Path>,
-        background_colors: &[u32],
-        text_colors: &[u32],
-    ) -> Result<Self, FrameSourceError> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, FrameSourceError> {
         let image = decode_image(path.as_ref())?;
-        let mut sourcer = Self::new(background_colors, text_colors)?;
+        let mut sourcer = Self::new()?;
         let detected_frames = sourcer.detect(&image)?;
         sourcer.frames = DetectedFrameQueue::from_detected_frames(detected_frames);
         Ok(sourcer)
@@ -100,14 +92,6 @@ impl FramesDetectorSourcer for NeuralNetworkFramesDetectorSourcer {
             .collect();
         detected_frames_from_bounds(image, detected_bounds)
     }
-}
-
-fn format_colors(colors: &[u32]) -> String {
-    colors
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 fn save_image(image: &RgbaImage) -> Result<TemporaryImage, FrameSourceError> {

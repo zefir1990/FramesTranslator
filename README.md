@@ -35,7 +35,7 @@ Core models:
 | Interface | Concrete type | Behavior |
 | --- | --- | --- |
 | `FramesSourcer` | `ProceduralFramesDetectorSourcer` | Detects frames as connected background-color regions that contain text-color pixels, with tolerance for scaled and anti-aliased pixels. |
-| `FramesSourcer` | `NeuralNetworkFramesDetectorSourcer` | Detects frames through a locally trained PyTorch pixel classifier in `scripts/neural_frame_detector_worker.py`. |
+| `FramesSourcer` | `NeuralNetworkFramesDetectorSourcer` | Proposes regions from dominant image colors and validates them with a locally trained PyTorch structural classifier in `scripts/neural_frame_detector_worker.py`. |
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
@@ -63,7 +63,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 }
 ```
 
-`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by both frame detector implementations; JSONC hexadecimal literals are supported. `FramesDetectorSourcer` is the abstract trait; `ProceduralFramesDetectorSourcer` and `NeuralNetworkFramesDetectorSourcer` are concrete implementations. A frame matches when its background pixels are near any configured background color and its text pixels are near any configured text color. Channel tolerance handles scaled screenshots whose anti-aliased text is gray rather than exactly white. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. `verboseMode` defaults to `true`; when enabled, the interactive window prints the detected frame count in green at the top-left corner. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
+`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `ProceduralFramesDetectorSourcer`; JSONC hexadecimal literals are supported. `FramesDetectorSourcer` is the abstract trait; `ProceduralFramesDetectorSourcer` and `NeuralNetworkFramesDetectorSourcer` are concrete implementations. The procedural detector matches background and text pixels against the configured colors with channel tolerance. The neural detector does not use configured colors: it proposes regions from dominant image colors and validates them with a structural neural classifier. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. `verboseMode` defaults to `true`; when enabled, the interactive window prints the detected frame count in green at the top-left corner. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
 Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, a `shadowrun_street` case for the Shibuya street dialog box, and a `shadowrun_hospital` case for the upscaled hospital dialog. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
@@ -156,6 +156,7 @@ test-case/
   Shadowrun_02.png             Gameplay menu sample image
   Shadowrun_03.png             Street dialog sample image
   Shadowrun_04.png             Upscaled hospital dialog sample image
+  Banana_01.png                Game-over dialog sample image
   tests-application-config.jsonc
   tests-config.jsonc           Serialized TestsConfig
 third-party/
@@ -173,7 +174,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, procedural and neural detection of both Shadowrun CD panels and the intro, street, and hospital dialog boxes, tolerant matching of scaled gray text, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, procedural and neural detection of both Shadowrun CD panels and the intro, street, hospital, and Banana dialog boxes, color-free neural detection of the beige `Banana_01.png` dialog, tolerant matching of scaled gray text, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

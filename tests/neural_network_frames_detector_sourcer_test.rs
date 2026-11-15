@@ -1,5 +1,3 @@
-mod support;
-
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -8,12 +6,21 @@ use frames_translator::implementations::NeuralNetworkFramesDetectorSourcer;
 use frames_translator::text_region::Bounds;
 
 #[test]
+fn neural_network_detector_finds_banana_dialog_frame() -> Result<(), Box<dyn Error>> {
+    let frames_detector = NeuralNetworkFramesDetectorSourcer::new()?;
+    let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-case/Banana_01.png");
+    let image = image::open(image_path)?.to_rgba8();
+    let detected_frames = frames_detector.detect(&image)?;
+    assert_eq!(detected_frames.len(), 1);
+    assert_eq!(detected_frames[0].bounds(), Bounds::new(24, 199, 460, 246));
+    assert_eq!(detected_frames[0].frame().width(), 460);
+    assert_eq!(detected_frames[0].frame().height(), 246);
+    Ok(())
+}
+
+#[test]
 fn neural_network_detector_finds_expected_frames_in_sample_images() -> Result<(), Box<dyn Error>> {
-    let application_config = support::load_application_config()?;
-    let frames_detector = NeuralNetworkFramesDetectorSourcer::new(
-        application_config.frames_detection_background_colors(),
-        application_config.frames_detection_text_colors(),
-    )?;
+    let frames_detector = NeuralNetworkFramesDetectorSourcer::new()?;
     let expected_cases = [
         (
             "test-case/Shadowrun_01.png",
