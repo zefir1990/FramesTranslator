@@ -1,13 +1,13 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use image::RgbaImage;
 use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::Keycode;
 use sdl3::pixels::{Color, PixelFormat};
-use sdl3::render::{Canvas, FRect};
+use sdl3::render::{BlendMode, Canvas, FRect};
 use sdl3::video::Window;
 
 use frames_translator::application_config::ApplicationConfig;
@@ -29,6 +29,11 @@ const EMPTY_STATE_MESSAGE: &str = "Drag and drop an image here";
 const VERBOSE_TEXT_POSITION: (f32, f32) = (2.0, 2.0);
 const VERBOSE_TEXT_COLOR: Color = Color::RGB(0, 255, 0);
 const TRANSLATED_TEXT_COLOR: Color = Color::RGB(255, 255, 255);
+const FRAME_FILL_COLOR: Color = Color::RGB(0, 0, 0);
+const OVERLAY_ALPHA: u8 = 204;
+const MINIMUM_OVERLAY_CHANNEL: u8 = 80;
+const OVERLAY_CHANNEL_RANGE: u64 = 176;
+const DEFAULT_RANDOM_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
 
 pub fn run(
@@ -128,6 +133,7 @@ struct Scene {
 struct FrameOverlay {
     bounds: Bounds,
     layout: DebugTextLayout,
+    color: Color,
 }
 
 fn load_scene(
@@ -138,6 +144,7 @@ fn load_scene(
 ) -> Result<Scene, ApplicationError> {
     let image = image::open(image_path)?.to_rgba8();
     let detected_frames = frames_detector.detect(&image)?;
+    let mut color_generator = RandomColorGenerator::new(random_seed());
     let mut overlays = Vec::with_capacity(detected_frames.len());
     for detected_frame in detected_frames {
         let regions = frames_ocr.recognize(detected_frame.frame())?;
@@ -147,6 +154,7 @@ fn load_scene(
         overlays.push(FrameOverlay {
             bounds,
             layout: DebugTextLayout::for_translated_texts(&translated_texts, bounds),
+            color: color_generator.next_color(),
         });
     }
     let scale = display_scale(image.width(), image.height());
@@ -183,7 +191,7 @@ fn show_scene(
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     canvas.copy(&texture, None, None).map_err(sdl_error)?;
-    draw_overlays(canvas, &scene.overlays, scene.scale)?;
+    draw_overlays(canvas, &scene.overlays, scene.scale, verbose_mode)?;
     if verbose_mode {
         draw_frame_count(canvas, scene.overlays.len())?;
     }
@@ -195,10 +203,20 @@ fn draw_overlays(
     canvas: &mut Canvas<Window>,
     overlays: &[FrameOverlay],
     scene_scale: u32,
+    verbose_mode: bool,
 ) -> Result<(), ApplicationError> {
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.set_blend_mode(if verbose_mode {
+        BlendMode::Blend
+    } else {
+        BlendMode::None
+    });
     for overlay in overlays {
         let bounds = overlay.bounds;
+        canvas.set_draw_color(if verbose_mode {
+            overlay.color
+        } else {
+            FRAME_FILL_COLOR
+        });
         canvas
             .fill_rect(FRect::new(
                 bounds.x() as f32,
@@ -208,6 +226,7 @@ fn draw_overlays(
             ))
             .map_err(sdl_error)?;
     }
+    canvas.set_blend_mode(BlendMode::None);
     for overlay in overlays {
         overlay
             .layout
@@ -263,6 +282,46 @@ fn display_scale(image_width: u32, image_height: u32) -> u32 {
     (MAXIMUM_WINDOW_WIDTH / image_width.max(1))
         .min(MAXIMUM_WINDOW_HEIGHT / image_height.max(1))
         .clamp(1, MAXIMUM_WINDOW_SCALE)
+}
+
+struct RandomColorGenerator {
+    state: u64,
+}
+
+impl RandomColorGenerator {
+    const fn new(seed: u64) -> Self {
+        Self { state: seed | 1 }
+    }
+
+    fn next_color(&mut self) -> Color {
+        let bits = self.next_bits();
+        Color::RGBA(
+            overlay_channel(bits),
+            overlay_channel(bits >> 21),
+            overlay_channel(bits >> 42),
+            OVERLAY_ALPHA,
+        )
+    }
+
+    fn next_bits(&mut self) -> u64 {
+        let mut state = self.state;
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        self.state = state;
+        state
+    }
+}
+
+fn overlay_channel(bits: u64) -> u8 {
+    MINIMUM_OVERLAY_CHANNEL + (bits % OVERLAY_CHANNEL_RANGE) as u8
+}
+
+fn random_seed() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(DEFAULT_RANDOM_SEED)
 }
 
 fn sdl_error(error: impl ToString) -> ApplicationError {
@@ -343,5 +402,28 @@ mod tests {
     #[test]
     fn preserves_aspect_ratio_when_choosing_a_scale() {
         assert_eq!(display_scale(640, 224), 2);
+    }
+
+    #[test]
+    fn generates_translucent_overlay_colors() {
+        let mut color_generator = RandomColorGenerator::new(DEFAULT_RANDOM_SEED);
+        for _ in 0..8 {
+            let color = color_generator.next_color();
+            assert_eq!(color.a, OVERLAY_ALPHA);
+            for channel in [color.r, color.g, color.b] {
+                assert!(channel >= MINIMUM_OVERLAY_CHANNEL);
+                assert!(
+                    u64::from(channel) < u64::from(MINIMUM_OVERLAY_CHANNEL) + OVERLAY_CHANNEL_RANGE
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generates_distinct_colors_for_adjacent_frames() {
+        let mut color_generator = RandomColorGenerator::new(DEFAULT_RANDOM_SEED);
+        let first_color = color_generator.next_color();
+        let second_color = color_generator.next_color();
+        assert_ne!(first_color, second_color);
     }
 }
