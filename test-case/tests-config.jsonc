@@ -11,6 +11,18 @@
           "height": 68
         }
       }
+    ],
+    "expectedResultOCR": [
+      "見る",
+      "話す",
+      "移動",
+      "アイテム"
+    ],
+    "expectedTranslationResult": [
+      "See",
+      "Talk",
+      "Contact Us",
+      "Item."
     ]
   }
 }

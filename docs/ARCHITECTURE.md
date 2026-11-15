@@ -73,7 +73,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 
 ### TestsConfig
 
-`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
+`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig`, the expected OCR line texts under `expectedResultOCR`, and the expected translations under `expectedTranslationResult`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -160,7 +160,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
         "name": "Actions Menu",
         "rect": { "x": 18, "y": 86, "width": 91, "height": 68 }
       }
-    ]
+    ],
+    "expectedResultOCR": ["見る", "話す", "移動", "アイテム"],
+    "expectedTranslationResult": ["See", "Talk", "Contact Us", "Item."]
   }
 }
 ```
@@ -172,14 +174,14 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG and extracts the named frame rectangles from `TestsConfig` | Single image, no video or directory input |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
-| `MangaFramesOCR` | `FramesOCR` | Sends frame PNGs to a persistent `manga-ocr` Python worker | Uses the whole frame as text bounds; Japanese-focused model; requires `.venv` |
+| `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
 | `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled.
 
-`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. Frames are encoded to temporary PNG files, sent through stdin, and responses are read from stdout. Worker access is serialized by a mutex. If no text is recognized, the frame produces no regions; otherwise the frame produces one region with whole-frame bounds.
+`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line with vertical padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
 
 ```mermaid
 sequenceDiagram
@@ -196,7 +198,7 @@ sequenceDiagram
     Worker-->>OCR: OK text
 ```
 
-`ArgosTextTranslator` starts `.venv/Scripts/python.exe` with `scripts/argos_translate_worker.py ja en` and keeps the worker alive. Requests and responses are JSON lines, so translated text can contain whitespace without breaking the protocol. The default language pair is Japanese to English; `with_languages` accepts another installed pair.
+`ArgosTextTranslator` starts `.venv/Scripts/python.exe` with `scripts/argos_translate_worker.py ja en` and keeps the worker alive. Requests and responses are JSON lines, so translated text can contain whitespace without breaking the protocol. The default language pair is Japanese to English; `with_languages` accepts another installed pair. Short Japanese labels are retried with sentence punctuation when Argos returns an empty or unstable translation.
 
 ## Error strategy
 
@@ -227,8 +229,9 @@ Coverage includes:
 - PNG decoding, configured frame extraction, crop dimensions and pixel fidelity,
 - source termination,
 - exact OCR regions and frame containment,
-- Manga OCR protocol response parsing and real `"Actions Menu"` text extraction,
+- Manga OCR protocol response parsing, four-line segmentation, and real `"Actions Menu"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
+- full Shadowrun CD source to OCR to translation pipeline,
 - single and batch translation,
 - unknown dictionary entries,
 - rendered region color, unchanged frame dimensions,

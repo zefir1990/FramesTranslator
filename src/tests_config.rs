@@ -28,15 +28,35 @@ impl TestsConfig {
 pub struct ShadowrunCdTestConfig {
     #[serde(flatten)]
     frames: FramesConfig,
+    #[serde(rename = "expectedResultOCR")]
+    expected_result_ocr: Vec<String>,
+    #[serde(rename = "expectedTranslationResult")]
+    expected_translation_result: Vec<String>,
 }
 
 impl ShadowrunCdTestConfig {
-    pub fn new(frames: FramesConfig) -> Self {
-        Self { frames }
+    pub fn new(
+        frames: FramesConfig,
+        expected_result_ocr: Vec<String>,
+        expected_translation_result: Vec<String>,
+    ) -> Self {
+        Self {
+            frames,
+            expected_result_ocr,
+            expected_translation_result,
+        }
     }
 
     pub fn frames(&self) -> &FramesConfig {
         &self.frames
+    }
+
+    pub fn expected_result_ocr(&self) -> &[String] {
+        &self.expected_result_ocr
+    }
+
+    pub fn expected_translation_result(&self) -> &[String] {
+        &self.expected_translation_result
     }
 }
 
@@ -52,9 +72,31 @@ mod tests {
             "Actions Menu",
             Bounds::new(18, 86, 91, 68),
         )]);
-        let tests_config = TestsConfig::new(ShadowrunCdTestConfig::new(frames_config));
-        let actions_menu = &tests_config.shadowrun_cd().frames().frames()[0];
+        let expected_result_ocr = vec![
+            "見る".to_owned(),
+            "話す".to_owned(),
+            "移動".to_owned(),
+            "アイテム".to_owned(),
+        ];
+        let expected_translation_result = vec![
+            "See".to_owned(),
+            "Talk".to_owned(),
+            "Contact Us".to_owned(),
+            "Item.".to_owned(),
+        ];
+        let tests_config = TestsConfig::new(ShadowrunCdTestConfig::new(
+            frames_config,
+            expected_result_ocr.clone(),
+            expected_translation_result.clone(),
+        ));
+        let shadowrun_cd = tests_config.shadowrun_cd();
+        let actions_menu = &shadowrun_cd.frames().frames()[0];
         assert_eq!(actions_menu.name(), "Actions Menu");
         assert_eq!(actions_menu.rect(), Bounds::new(18, 86, 91, 68));
+        assert_eq!(shadowrun_cd.expected_result_ocr(), expected_result_ocr);
+        assert_eq!(
+            shadowrun_cd.expected_translation_result(),
+            expected_translation_result
+        );
     }
 }

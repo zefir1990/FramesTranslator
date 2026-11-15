@@ -25,7 +25,7 @@ Core models:
 - `Frame` stores a name, validated RGBA pixel data, and dimensions.
 - `Bounds` describes a rectangular region.
 - `FramesConfig` holds named frame rectangles.
-- `TestsConfig` groups separate configuration structs for each test case.
+- `TestsConfig` groups separate configuration structs for each test case, including expected OCR and translation results.
 - `TextRegion` pairs recognized text with its bounds.
 - `TranslatedText` pairs a source region with translated text.
 
@@ -36,7 +36,7 @@ Core models:
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
-| `FramesOCR` | `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker. |
+| `FramesOCR` | `MangaFramesOCR` | Splits frames into text lines and runs Manga OCR per line. |
 | `TextTranslator` | `DictionaryTextTranslator` | Translates text through a fixed dictionary. |
 | `TextTranslator` | `ArgosTextTranslator` | Translates Japanese to English through Argos Translate. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
@@ -114,6 +114,7 @@ tests/
   application_config_test.rs
   frames_ocr_test.rs
   frames_sourcer_test.rs
+  shadowrun_cd_pipeline_test.rs
   tests_config_test.rs
   text_renderer_test.rs
   text_translator_test.rs

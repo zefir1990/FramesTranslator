@@ -70,7 +70,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 
 `ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
 
-`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`.
+`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. It includes the expected OCR lines under `expectedResultOCR` and the expected translations under `expectedTranslationResult`.
 
 ## Concrete implementations
 
@@ -79,7 +79,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
-| `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker in `.venv` |
+| `MangaFramesOCR` | Splits frames into text lines and runs Manga OCR per line through a persistent Python worker in `.venv` |
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
 | `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
@@ -91,8 +91,9 @@ These are development and test backends, not production implementations.
 Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
-- `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes it through `MangaFramesOCR`, and asserts recognized Japanese text contains `話す`.
+- `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes four text lines through `MangaFramesOCR`, and asserts the exact line texts.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
+- `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation pipeline and requires four recognized and translated Shadowrun CD menu lines.
 - `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
