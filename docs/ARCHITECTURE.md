@@ -55,7 +55,9 @@ flowchart LR
 | `src/implementations/` | Concrete backends for the four contracts |
 | `src/lib.rs` | Public module and re-export surface |
 | `src/main.rs` | Binary entry point for the interactive drag-and-drop application |
-| `src/sdl_image_translator.rs` | SDL3 window, drop-event loop, and in-place translation overlays |
+| `src/sdl_frame_viewer.rs` | Shared SDL3 window, drop-event loop, translucent frame tinting, and frame counter |
+| `src/sdl_image_translator.rs` | `FramesTranslator` scene builder with OCR and translation overlays |
+| `src/bin/neural_network_frames_detector_sourcer_test_application.rs` | Detector-only SDL application entry point |
 
 ## Domain models
 
@@ -248,20 +250,23 @@ Because the application configuration remains focused on implementation selectio
 
 ## Interactive application
 
-`src/main.rs` loads `ApplicationConfig`, creates the configured OCR and translation backends, and passes them to `sdl_image_translator::run`. The SDL window starts in an empty state that prompts for a dropped image. An image path may also be supplied as the first command-line argument.
+`src/main.rs` loads `ApplicationConfig`, creates the configured OCR and translation backends, and passes them to `sdl_image_translator::run`. That function builds a `Scene` through `sdl_image_translator` and delegates window creation, drag-and-drop events, frame tinting, and the frame counter to `sdl_frame_viewer::run`. The SDL window starts in an empty state that prompts for a dropped image. An image path may also be supplied as the first command-line argument.
 
 For each `Event::DropFile`, the application:
 
 1. Decodes the dropped image into an RGBA image.
 2. Calls `detect` on the configured `FramesDetectorSourcer`, which returns `DetectedFrame` values with both the cropped frame and its original bounds.
 3. Runs `FramesOCR::recognize` for each detected frame. Wide dialog frames with at least three lines go through `translate_frame_regions`, which translates the combined text once and distributes the result across the original lines; other frames use `TextTranslator::translate_all` per line.
-4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines wrapped and scaled to stay inside the frame. In verbose mode, each frame is instead tinted with a translucent random color so its bounds stay visible under the translation.
-5. When `verboseMode` is enabled, draws `Frames detected: N` in green at the top-left corner in screen coordinates.
-6. Presents the result and waits for another drop, `Escape`, or window close.
+4. Builds one `FrameOverlay` per frame with the translated text layout.
+5. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines wrapped and scaled to stay inside the frame. In verbose mode, each frame is instead tinted with a translucent random color so its bounds stay visible under the translation.
+6. When `verboseMode` is enabled, draws `Frames detected: N` in green at the top-left corner in screen coordinates.
+7. Presents the result and waits for another drop, `Escape`, or window close.
 
 `verboseMode` is a `bool` configuration field that defaults to `true` when omitted, so existing configuration files do not need the key. When enabled, each frame receives a translucent random fill color (`RGBA` with alpha `204`) generated when the scene loads, translations are drawn on top, and the detected frame count is shown.
 
 The display scale is chosen to fit `1280x900` while preserving aspect ratio, capped at `4`. `DetectedFrame` exposes the bounds needed for in-place placement; the `FramesSourcer` contract still yields only frames for pipeline callers.
+
+`NeuralNetworkFramesDetectorSourcerTestApplication` uses the same `sdl_frame_viewer` loop without OCR or translation. It constructs `NeuralNetworkFramesDetectorSourcer` directly, builds scenes with `FrameOverlay::new` so overlays carry no text layout, and always enables verbose tinting and the frame counter. This keeps detector behavior visible without running the slower OCR and translation stages.
 
 ## Concrete implementations
 
@@ -402,11 +407,11 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 
 ## Current limitations
 
-- `src/main.rs` runs an interactive SDL application; automated pipeline tests use `SdlThreeTextRenderer` directly.
+- `src/main.rs` runs the interactive translation application and `src/bin/neural_network_frames_detector_sourcer_test_application.rs` runs the detector-only application; automated pipeline tests use `SdlThreeTextRenderer` directly.
 - OCR and translation use local Python models with model-dependent quality.
 - `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and fit translated text to the frame by wrapping and scaling.
-- The interactive application blocks its event loop while processing a dropped image.
+- Both SDL applications block their event loop while processing a dropped image.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus frame detector colors.

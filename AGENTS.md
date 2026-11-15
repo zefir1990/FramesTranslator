@@ -2,12 +2,12 @@
 
 ## Repository
 
-FramesTranslator is a Rust image translation pipeline. The current codebase defines the pipeline contracts, domain models, configuration, implementation factory, deterministic local backends, and integration tests. It is not yet an end-to-end application: `src/main.rs` is empty, OCR and translation are fixtures, and rendering draws colored blocks instead of glyphs.
+FramesTranslator is a Rust image translation pipeline with interactive SDL applications. The pipeline contracts, domain models, configuration, implementation factory, local backends, and integration tests are implemented; `FramesTranslator` processes dropped images through detection, OCR, translation, and rendering, while `NeuralNetworkFramesDetectorSourcerTestApplication` shows only detected frame bounds.
 
 ## Stack
 
 - Rust, edition 2024
-- Binary target: `FramesTranslator`
+- Binary targets: `FramesTranslator` and `NeuralNetworkFramesDetectorSourcerTestApplication`
 - Library target: `frames_translator`
 - Dependency: `image` with only the `png` feature enabled
 - Serialization: `serde`, `serde_json`, and `json5`
@@ -51,7 +51,9 @@ Supporting modules:
 - `src/debug_text.rs`: debug-font text wrapping, fitting, and drawing used by both renderers.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
 - `src/main.rs`: interactive SDL application that processes dropped images.
-- `src/sdl_image_translator.rs`: drag-and-drop event loop and in-place translation overlays.
+- `src/sdl_image_translator.rs`: scene builder that adds OCR and translation overlays.
+- `src/sdl_frame_viewer.rs`: shared SDL window, drag-and-drop loop, frame tinting, and detected frame counter.
+- `src/bin/neural_network_frames_detector_sourcer_test_application.rs`: detector-only SDL application that tints detected frames and shows their count.
 - `src/frames_detector_sourcer.rs`: abstract `FramesDetectorSourcer` trait and `DetectedFrame`.
 - `src/implementations/procedural_frames_detector_sourcer.rs`: background-color and text-color frame detection.
 - `src/implementations/neural_network_frames_detector_sourcer.rs`: local PyTorch frame detector adapter.
@@ -158,7 +160,7 @@ When adding an implementation:
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
 - `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
-- The application processes each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
+- The SDL applications process each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
 - PNG only.
 - Synchronous, single-threaded processing.
 - All frames are processed fully in memory.

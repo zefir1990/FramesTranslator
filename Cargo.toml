@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "FramesTranslator"
 path = "src/main.rs"
 
+[[bin]]
+name = "NeuralNetworkFramesDetectorSourcerTestApplication"
+path = "src/bin/neural_network_frames_detector_sourcer_test_application.rs"
+
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 json5 = "1"

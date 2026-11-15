@@ -83,6 +83,14 @@ Drop another image to process it again; press `Escape` or close the window to ex
 cargo run -- test-case/Shadowrun_03.png
 ```
 
+## Detector test application
+
+`NeuralNetworkFramesDetectorSourcerTestApplication` is a detector-only variant of the interactive application. It uses `NeuralNetworkFramesDetectorSourcer` without OCR or translation, tints each detected frame with a random color at alpha `0.8`, and shows the detected frame count in green at the top-left corner. It accepts dropped images and an optional image path:
+
+```powershell
+cargo run --bin NeuralNetworkFramesDetectorSourcerTestApplication -- test-case/Shadowrun_02.png
+```
+
 ## Library usage
 
 ```rust
@@ -130,7 +138,10 @@ src/
   frames_ocr.rs                OCR trait and error
   frames_sourcer.rs            Frame source trait and error
   main.rs                      Drag-and-drop SDL application entry point
-  sdl_image_translator.rs      Interactive SDL window and in-place overlays
+  sdl_frame_viewer.rs          Shared SDL window, frame tinting, and counter
+  sdl_image_translator.rs      FramesTranslator scene builder and error type
+  bin/
+    neural_network_frames_detector_sourcer_test_application.rs  Detector-only SDL application
   tests_config.rs              Per-test configuration structs
   text_region.rs               Bounds, TextRegion, TranslatedText
   text_renderer.rs             Renderer trait and error
