@@ -23,6 +23,7 @@
       "Talk",
       "Contact Us",
       "Item."
-    ]
+    ],
+    "timeoutSeconds": 5
   }
 }

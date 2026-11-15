@@ -14,7 +14,7 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
     assert_eq!(application_config.frames_ocr(), "MangaFramesOCR");
     assert_eq!(application_config.text_translator(), "ArgosTextTranslator");
-    assert_eq!(application_config.text_renderer(), "BlockTextRenderer");
+    assert_eq!(application_config.text_renderer(), "SdlThreeTextRenderer");
     let serialized = application_config.to_jsonc()?;
     let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;
     for key in [

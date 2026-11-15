@@ -34,6 +34,7 @@ fn tests_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn Error>
     {
         assert_eq!(actual_text.as_str(), expected_text);
     }
+    assert_eq!(tests_config.shadowrun_cd().timeout_seconds(), 5);
     let serialized = tests_config.to_jsonc()?;
     let restored = TestsConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, tests_config);

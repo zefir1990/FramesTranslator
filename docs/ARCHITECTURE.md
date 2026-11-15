@@ -51,7 +51,7 @@ flowchart LR
 | `src/factory.rs` | Class-name based composition and `FactoryError` |
 | `src/implementations/` | Concrete backends for the four contracts |
 | `src/lib.rs` | Public module and re-export surface |
-| `src/main.rs` | Binary entry point, currently empty |
+| `src/main.rs` | Binary entry point that runs the configured pipeline |
 
 ## Domain models
 
@@ -73,7 +73,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 
 ### TestsConfig
 
-`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig`, the expected OCR line texts under `expectedResultOCR`, and the expected translations under `expectedTranslationResult`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
+`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig`, the expected OCR line texts under `expectedResultOCR`, the expected translations under `expectedTranslationResult`, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -129,7 +129,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "BlockTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer"
 }
 ```
 
@@ -162,7 +162,8 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
       }
     ],
     "expectedResultOCR": ["見る", "話す", "移動", "アイテム"],
-    "expectedTranslationResult": ["See", "Talk", "Contact Us", "Item."]
+    "expectedTranslationResult": ["See", "Talk", "Contact Us", "Item."],
+    "timeoutSeconds": 5
   }
 }
 ```
@@ -178,8 +179,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
 | `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
+| `SdlThreeTextRenderer` | `TextRenderer` | Shows `test-case/Shadowrun_02.png`, blacks out the configured frame, draws translated lines, and waits for the window to close | Uses SDL's ASCII debug font and requires a display |
 
-`ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled.
+`ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled. `SdlThreeTextRenderer` uses vendored SDL3 3.4.20 libraries under `third-party/sdl3`; `build.rs` adds the import library path and copies `SDL3.dll` next to test and binary outputs.
 
 `MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line with vertical padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
 
@@ -210,7 +212,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | `FrameSourceError` | `Io`, `Decoding`, `RegionOutOfBounds` |
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
-| `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame` |
+| `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame`, `RenderingFailed` |
 | `FactoryError` | `FrameSource`, `Recognition`, `Translation`, `Io`, `TestsConfig`, `UnknownImplementation` |
 
 Errors are propagated with `?`. `FactoryError` preserves source errors where a dedicated variant exists. No stage panics on malformed external input; invalid dimensions, missing configuration, unknown class names, and out-of-bounds rendering are represented as errors.
@@ -232,6 +234,7 @@ Coverage includes:
 - Manga OCR protocol response parsing, four-line segmentation, and real `"Actions Menu"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
 - full Shadowrun CD source to OCR to translation pipeline,
+- SDL preview timeout behavior,
 - single and batch translation,
 - unknown dictionary entries,
 - rendered region color, unchanged frame dimensions,
@@ -284,9 +287,9 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 
 ## Current limitations
 
-- `src/main.rs` is empty; there is no CLI or end-to-end application yet.
-- OCR and translation implementations are deterministic fixtures, not real services.
-- Rendering produces colored blocks rather than text glyphs.
+- `src/main.rs` runs the configured source, OCR, translation, and rendering pipeline.
+- OCR and translation use local Python models with model-dependent quality.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection only.

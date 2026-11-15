@@ -40,8 +40,9 @@ Core models:
 | `TextTranslator` | `DictionaryTextTranslator` | Translates text through a fixed dictionary. |
 | `TextTranslator` | `ArgosTextTranslator` | Translates Japanese to English through Argos Translate. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
+| `TextRenderer` | `SdlThreeTextRenderer` | Displays the Shadowrun image with translated text in an SDL3 window. |
 
-`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use.
+`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use. `SdlThreeTextRenderer` displays results in an SDL3 window until the user closes it.
 
 ## Configuration
 
@@ -52,7 +53,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "BlockTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer"
 }
 ```
 
@@ -95,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Project structure
 
 ```text
+build.rs                       Copies the vendored SDL3 DLL into target
 src/
   application_config.rs        ApplicationConfig JSONC loading
   factory.rs                   Class-name based implementation selection
@@ -122,22 +124,25 @@ test-case/
   Shadowrun_02.png             Sample input image
   tests-application-config.jsonc
   tests-config.jsonc           Serialized TestsConfig
+third-party/
+  sdl3/                        Vendored SDL3 import library, DLL, and license
 ```
 
 ## Build and test
 
 ```powershell
 cargo build
+cargo run
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, frame exhaustion, OCR region bounds, single and batch translation, rendering output, and out-of-bounds rejection.
+The test suite covers image decoding, frame exhaustion, OCR region bounds, four-line extraction, batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 
-The pipeline interfaces, configuration, factory, and tests are in place. Production OCR, translation, and font rendering backends still need to be implemented.
+The pipeline interfaces, configuration, factory, tests, and SDL3 preview flow are in place. Run `cargo run` to process the configured Shadowrun CD frame and display the translated result; the window closes after the configured timeout or when the user closes it.
 
 ## License
 

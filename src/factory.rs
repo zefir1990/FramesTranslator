@@ -9,7 +9,7 @@ use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
     ArgosTextTranslator, BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR,
-    ImageFramesSourcer, MangaFramesOCR, SyntheticFramesSourcer,
+    ImageFramesSourcer, MangaFramesOCR, SdlThreeTextRenderer, SyntheticFramesSourcer,
 };
 use crate::tests_config::TestsConfig;
 use crate::text_renderer::TextRenderer;
@@ -67,6 +67,7 @@ pub fn create_text_renderer(
 ) -> Result<Box<dyn TextRenderer>, FactoryError> {
     match config.text_renderer() {
         "BlockTextRenderer" => Ok(Box::new(BlockTextRenderer::new())),
+        "SdlThreeTextRenderer" => Ok(Box::new(SdlThreeTextRenderer::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "textRenderer",
             name: name.to_owned(),

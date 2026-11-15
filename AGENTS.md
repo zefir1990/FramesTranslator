@@ -13,6 +13,7 @@ FramesTranslator is a Rust image translation pipeline. The current codebase defi
 - Serialization: `serde`, `serde_json`, and `json5`
 - OCR backend: `manga-ocr` in `.venv` with Python 3.13 and `scripts/manga_ocr_worker.py`
 - Translation backend: `argostranslate` in `.venv` with Japanese packages and `scripts/argos_translate_worker.py`
+- Windowing: `sdl3` with vendored SDL3 3.4.20 under `third-party/sdl3`
 - No async runtime, database, network client, or dotenv dependency
 
 ## Commands
@@ -47,6 +48,9 @@ Supporting modules:
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
+- `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
+- `build.rs`: copies the vendored SDL3 DLL into target directories.
+- `third-party/sdl3`: vendored SDL3 3.4.20 import library, DLL, and license.
 - `src/implementations/`: concrete backends.
 
 Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing documentation is in `README.md`. Keep both accurate when architecture or behavior changes.
@@ -60,7 +64,7 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "BlockTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer"
 }
 ```
 
@@ -70,7 +74,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 
 `ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
 
-`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. It includes the expected OCR lines under `expectedResultOCR` and the expected translations under `expectedTranslationResult`.
+`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. It includes the expected OCR lines under `expectedResultOCR`, the expected translations under `expectedTranslationResult`, and the SDL preview duration under `timeoutSeconds`.
 
 ## Concrete implementations
 
@@ -83,6 +87,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
 | `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
+| `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text in an SDL3 window until closed |
 
 These are development and test backends, not production implementations.
 
@@ -93,7 +98,7 @@ Integration tests are in `tests/`:
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes four text lines through `MangaFramesOCR`, and asserts the exact line texts.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
-- `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation pipeline and requires four recognized and translated Shadowrun CD menu lines.
+- `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline and requires four recognized and translated Shadowrun CD menu lines. The SDL window closes after `timeoutSeconds`.
 - `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
@@ -126,9 +131,8 @@ When adding an implementation:
 
 ## Current limitations
 
-- No CLI or end-to-end application flow.
-- No real OCR engine or translation service.
-- No glyph or font rendering.
+- OCR and translation use local Python models with model-dependent quality.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
 - PNG only.
 - Synchronous, single-threaded processing.
 - All frames are processed fully in memory.

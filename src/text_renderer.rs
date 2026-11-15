@@ -21,6 +21,7 @@ pub enum RenderingError {
     },
     UnsupportedFrame,
     InvalidFrame(String),
+    RenderingFailed(String),
 }
 
 impl Display for RenderingError {
@@ -40,6 +41,7 @@ impl Display for RenderingError {
             ),
             Self::UnsupportedFrame => write!(formatter, "frame format is not supported"),
             Self::InvalidFrame(message) => write!(formatter, "frame is invalid: {message}"),
+            Self::RenderingFailed(message) => write!(formatter, "rendering failed: {message}"),
         }
     }
 }

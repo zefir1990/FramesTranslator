@@ -32,6 +32,8 @@ pub struct ShadowrunCdTestConfig {
     expected_result_ocr: Vec<String>,
     #[serde(rename = "expectedTranslationResult")]
     expected_translation_result: Vec<String>,
+    #[serde(rename = "timeoutSeconds")]
+    timeout_seconds: u64,
 }
 
 impl ShadowrunCdTestConfig {
@@ -39,11 +41,13 @@ impl ShadowrunCdTestConfig {
         frames: FramesConfig,
         expected_result_ocr: Vec<String>,
         expected_translation_result: Vec<String>,
+        timeout_seconds: u64,
     ) -> Self {
         Self {
             frames,
             expected_result_ocr,
             expected_translation_result,
+            timeout_seconds,
         }
     }
 
@@ -57,6 +61,10 @@ impl ShadowrunCdTestConfig {
 
     pub fn expected_translation_result(&self) -> &[String] {
         &self.expected_translation_result
+    }
+
+    pub fn timeout_seconds(&self) -> u64 {
+        self.timeout_seconds
     }
 }
 
@@ -88,6 +96,7 @@ mod tests {
             frames_config,
             expected_result_ocr.clone(),
             expected_translation_result.clone(),
+            5,
         ));
         let shadowrun_cd = tests_config.shadowrun_cd();
         let actions_menu = &shadowrun_cd.frames().frames()[0];
@@ -98,5 +107,6 @@ mod tests {
             shadowrun_cd.expected_translation_result(),
             expected_translation_result
         );
+        assert_eq!(shadowrun_cd.timeout_seconds(), 5);
     }
 }

@@ -2,5 +2,5 @@
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "BlockTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer"
 }
