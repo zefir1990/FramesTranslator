@@ -1,18 +1,26 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::path::PathBuf;
 
 use crate::config::{Config, ConfigError};
 use crate::frames_ocr::FramesOCR;
-use crate::frames_sourcer::FramesSourcer;
+use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
-    BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR, SyntheticFramesSourcer,
+    BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR, ImageFramesSourcer,
+    SyntheticFramesSourcer,
 };
 use crate::text_renderer::TextRenderer;
 use crate::text_translator::TextTranslator;
 
+const DEFAULT_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
+
 pub fn create_frames_sourcer(config: &Config) -> Result<Box<dyn FramesSourcer>, FactoryError> {
     match config.require("FRAMES_SOURCER")? {
         "SyntheticFramesSourcer" => Ok(Box::new(SyntheticFramesSourcer::new())),
+        "ImageFramesSourcer" => {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_IMAGE_PATH);
+            Ok(Box::new(ImageFramesSourcer::open(path)?))
+        }
         name => Err(FactoryError::UnknownImplementation {
             variable: "FRAMES_SOURCER",
             name: name.to_owned(),
@@ -53,6 +61,7 @@ pub fn create_text_renderer(config: &Config) -> Result<Box<dyn TextRenderer>, Fa
 #[derive(Debug)]
 pub enum FactoryError {
     Config(ConfigError),
+    FrameSource(FrameSourceError),
     UnknownImplementation {
         variable: &'static str,
         name: String,
@@ -63,6 +72,7 @@ impl Display for FactoryError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Config(error) => write!(formatter, "{error}"),
+            Self::FrameSource(error) => write!(formatter, "{error}"),
             Self::UnknownImplementation { variable, name } => {
                 write!(formatter, "unknown implementation {name:?} for {variable}")
             }
@@ -74,6 +84,7 @@ impl Error for FactoryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Config(error) => Some(error),
+            Self::FrameSource(error) => Some(error),
             Self::UnknownImplementation { .. } => None,
         }
     }
@@ -82,5 +93,11 @@ impl Error for FactoryError {
 impl From<ConfigError> for FactoryError {
     fn from(error: ConfigError) -> Self {
         Self::Config(error)
+    }
+}
+
+impl From<FrameSourceError> for FactoryError {
+    fn from(error: FrameSourceError) -> Self {
+        Self::FrameSource(error)
     }
 }
