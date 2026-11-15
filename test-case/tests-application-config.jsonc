@@ -1,0 +1,6 @@
+{
+  "FRAMES_SOURCER": "ImageFramesSourcer",
+  "FRAMES_OCR": "FixtureFramesOCR",
+  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
+  "TEXT_RENDERER": "BlockTextRenderer"
+}

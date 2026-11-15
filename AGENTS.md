@@ -10,6 +10,7 @@ FramesTranslator is a Rust image translation pipeline. The current codebase defi
 - Binary target: `FramesTranslator`
 - Library target: `frames_translator`
 - Dependency: `image` with only the `png` feature enabled
+- Serialization: `serde`, `serde_json`, and `json5`
 - No async runtime, database, network client, or dotenv dependency
 
 ## Commands
@@ -37,28 +38,36 @@ The pipeline has four object-safe traits:
 
 Supporting modules:
 
-- `src/frame.rs`: validated RGBA8 `Frame`; buffer length must be `width * height * 4`.
+- `src/frame.rs`: named, validated RGBA8 `Frame`; buffer length must be `width * height * 4`.
+- `src/frames_config.rs`: `FramesConfig` and `NamedRect` for named frame rectangles.
+- `src/tests_config.rs`: `TestsConfig` with a separate config struct per test.
+- `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
-- `src/config.rs`: typed `.env` parser; only string lookup is supported.
-- `src/factory.rs`: composition root; maps class names from `.env` to concrete implementations.
+- `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
 - `src/implementations/`: concrete backends.
 
 Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing documentation is in `README.md`. Keep both accurate when architecture or behavior changes.
 
 ## Configuration
 
-`.env` and `.env.example` contain class names only:
+`ApplicationConfig` contains implementation class names only. The test application configuration is `test-case/tests-application-config.jsonc`:
 
-```env
-FRAMES_SOURCER=ImageFramesSourcer
-FRAMES_OCR=FixtureFramesOCR
-TEXT_TRANSLATOR=DictionaryTextTranslator
-TEXT_RENDERER=BlockTextRenderer
+```jsonc
+{
+  "FRAMES_SOURCER": "ImageFramesSourcer",
+  "FRAMES_OCR": "FixtureFramesOCR",
+  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
+  "TEXT_RENDERER": "BlockTextRenderer"
+}
 ```
 
-Do not add paths, colors, sizes, credentials, or feature flags to `.env` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend `Config` and the factory deliberately and update both `.env` files, tests, README, and architecture docs.
+Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
 `ImageFramesSourcer` uses `test-case/Shadowrun_02.png` when constructed through the factory. Its public `open(path)` constructor accepts an explicit path.
+
+`ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
+
+`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`.
 
 ## Concrete implementations
 
@@ -76,9 +85,11 @@ These are development and test backends, not production implementations.
 
 Integration tests are in `tests/`:
 
-- `tests/support/mod.rs` loads `.env` from `CARGO_MANIFEST_DIR`.
+- `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - OCR, translator, and renderer tests construct implementations through the factory.
-- `tests/frames_sourcer_test.rs` opens `test-case/Shadowrun_02.png` directly with `ImageFramesSourcer`.
+- `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
+- `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
+- `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
 The sample image is `320x224`. Tests assert PNG decoding, frame exhaustion, exact OCR regions, batch translation, rendering output, and out-of-bounds rejection.
 
@@ -87,7 +98,7 @@ When adding an implementation:
 1. Implement the relevant trait under `src/implementations/`.
 2. Export the type from `src/implementations/mod.rs`.
 3. Add a factory match arm in `src/factory.rs`.
-4. Select the class name in `.env` and `.env.example`.
+4. Select the class name in `test-case/tests-application-config.jsonc`.
 5. Add or update an integration test.
 6. Update `README.md`, `docs/ARCHITECTURE.md`, and this file if behavior or conventions change.
 
@@ -104,7 +115,7 @@ When adding an implementation:
 - Preserve `Frame` invariants: RGBA8 data only, validated dimensions, no unchecked buffer access.
 - Renderers must not mutate the input frame; return a new `Frame`.
 - Validate region containment before drawing. `Bounds::right()` and `Bounds::bottom()` are saturating and do not guarantee containment.
-- Keep `.env` and `.env.example` synchronized.
+- Keep `test-case/tests-application-config.jsonc` and `test-case/tests-config.jsonc` synchronized with their configuration structs.
 
 ## Current limitations
 

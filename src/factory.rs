@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 
-use crate::config::{Config, ConfigError};
+use crate::application_config::ApplicationConfig;
 use crate::frames_ocr::FramesOCR;
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
@@ -14,8 +14,10 @@ use crate::text_translator::TextTranslator;
 
 const DEFAULT_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
 
-pub fn create_frames_sourcer(config: &Config) -> Result<Box<dyn FramesSourcer>, FactoryError> {
-    match config.require("FRAMES_SOURCER")? {
+pub fn create_frames_sourcer(
+    config: &ApplicationConfig,
+) -> Result<Box<dyn FramesSourcer>, FactoryError> {
+    match config.frames_sourcer() {
         "SyntheticFramesSourcer" => Ok(Box::new(SyntheticFramesSourcer::new())),
         "ImageFramesSourcer" => {
             let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_IMAGE_PATH);
@@ -28,8 +30,8 @@ pub fn create_frames_sourcer(config: &Config) -> Result<Box<dyn FramesSourcer>, 
     }
 }
 
-pub fn create_frames_ocr(config: &Config) -> Result<Box<dyn FramesOCR>, FactoryError> {
-    match config.require("FRAMES_OCR")? {
+pub fn create_frames_ocr(config: &ApplicationConfig) -> Result<Box<dyn FramesOCR>, FactoryError> {
+    match config.frames_ocr() {
         "FixtureFramesOCR" => Ok(Box::new(FixtureFramesOCR::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "FRAMES_OCR",
@@ -38,8 +40,10 @@ pub fn create_frames_ocr(config: &Config) -> Result<Box<dyn FramesOCR>, FactoryE
     }
 }
 
-pub fn create_text_translator(config: &Config) -> Result<Box<dyn TextTranslator>, FactoryError> {
-    match config.require("TEXT_TRANSLATOR")? {
+pub fn create_text_translator(
+    config: &ApplicationConfig,
+) -> Result<Box<dyn TextTranslator>, FactoryError> {
+    match config.text_translator() {
         "DictionaryTextTranslator" => Ok(Box::new(DictionaryTextTranslator::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "TEXT_TRANSLATOR",
@@ -48,8 +52,10 @@ pub fn create_text_translator(config: &Config) -> Result<Box<dyn TextTranslator>
     }
 }
 
-pub fn create_text_renderer(config: &Config) -> Result<Box<dyn TextRenderer>, FactoryError> {
-    match config.require("TEXT_RENDERER")? {
+pub fn create_text_renderer(
+    config: &ApplicationConfig,
+) -> Result<Box<dyn TextRenderer>, FactoryError> {
+    match config.text_renderer() {
         "BlockTextRenderer" => Ok(Box::new(BlockTextRenderer::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "TEXT_RENDERER",
@@ -60,7 +66,6 @@ pub fn create_text_renderer(config: &Config) -> Result<Box<dyn TextRenderer>, Fa
 
 #[derive(Debug)]
 pub enum FactoryError {
-    Config(ConfigError),
     FrameSource(FrameSourceError),
     UnknownImplementation {
         variable: &'static str,
@@ -71,7 +76,6 @@ pub enum FactoryError {
 impl Display for FactoryError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config(error) => write!(formatter, "{error}"),
             Self::FrameSource(error) => write!(formatter, "{error}"),
             Self::UnknownImplementation { variable, name } => {
                 write!(formatter, "unknown implementation {name:?} for {variable}")
@@ -83,16 +87,9 @@ impl Display for FactoryError {
 impl Error for FactoryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Config(error) => Some(error),
             Self::FrameSource(error) => Some(error),
             Self::UnknownImplementation { .. } => None,
         }
-    }
-}
-
-impl From<ConfigError> for FactoryError {
-    fn from(error: ConfigError) -> Self {
-        Self::Config(error)
     }
 }
 

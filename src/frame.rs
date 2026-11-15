@@ -5,13 +5,19 @@ pub const CHANNELS_PER_PIXEL: usize = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
+    name: String,
     width: u32,
     height: u32,
     rgba_pixels: Vec<u8>,
 }
 
 impl Frame {
-    pub fn new(width: u32, height: u32, rgba_pixels: Vec<u8>) -> Result<Self, FrameError> {
+    pub fn new(
+        name: impl Into<String>,
+        width: u32,
+        height: u32,
+        rgba_pixels: Vec<u8>,
+    ) -> Result<Self, FrameError> {
         let expected_length = expected_rgba_buffer_length(width, height)?;
         let actual_length = rgba_pixels.len();
         if actual_length != expected_length {
@@ -21,10 +27,15 @@ impl Frame {
             });
         }
         Ok(Self {
+            name: name.into(),
             width,
             height,
             rgba_pixels,
         })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn width(&self) -> u32 {

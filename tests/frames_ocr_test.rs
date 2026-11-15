@@ -7,6 +7,7 @@ use frames_translator::frame::Frame;
 
 const FRAME_WIDTH: u32 = 64;
 const FRAME_HEIGHT: u32 = 48;
+const FRAME_NAME: &str = "OCR test frame";
 const EXPECTED_REGIONS: [(&str, u32, u32, u32, u32); 2] = [
     ("Shadowrun", 10, 8, 40, 12),
     ("Second Edition", 10, 28, 40, 12),
@@ -14,13 +15,14 @@ const EXPECTED_REGIONS: [(&str, u32, u32, u32, u32); 2] = [
 
 #[test]
 fn frames_ocr_recognizes_regions_inside_the_frame() -> Result<(), Box<dyn Error>> {
-    let config = support::load_config()?;
+    let application_config = support::load_application_config()?;
     let frame = Frame::new(
+        FRAME_NAME,
         FRAME_WIDTH,
         FRAME_HEIGHT,
         vec![0; FRAME_WIDTH as usize * FRAME_HEIGHT as usize * 4],
     )?;
-    let frames_ocr = create_frames_ocr(&config)?;
+    let frames_ocr = create_frames_ocr(&application_config)?;
     let regions = frames_ocr.recognize(&frame)?;
     assert_eq!(regions.len(), EXPECTED_REGIONS.len());
     for (region, (text, x, y, width, height)) in regions.iter().zip(EXPECTED_REGIONS) {

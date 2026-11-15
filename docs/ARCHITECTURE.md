@@ -18,7 +18,7 @@ The project separates four concerns:
 - **Domain models** describe frames and text regions without depending on any backend.
 - **Pipeline contracts** are Rust traits with typed errors.
 - **Concrete implementations** adapt local resources to those contracts.
-- **Composition** loads class names from `.env` and constructs the selected implementations through a factory.
+- **Composition** loads class names from `ApplicationConfig` and constructs the selected implementations through a factory.
 
 The pipeline depends on traits. Concrete types are known only to the factory, `src/lib.rs`, and tests that intentionally exercise a specific implementation.
 
@@ -27,7 +27,7 @@ flowchart LR
     Main[src/main.rs] --> Library[src/lib.rs]
     Library --> Contracts[Pipeline traits]
     Library --> Models[Domain models]
-    Library --> Config[src/config.rs]
+    Library --> Config[src/application_config.rs]
     Library --> Factory[src/factory.rs]
     Factory --> Contracts
     Factory --> Implementations[src/implementations]
@@ -39,13 +39,15 @@ flowchart LR
 
 | Path | Responsibility |
 | --- | --- |
-| `src/frame.rs` | RGBA `Frame` model and `FrameError` |
+| `src/frame.rs` | Named RGBA `Frame` model and `FrameError` |
+| `src/frames_config.rs` | `FramesConfig` and named frame rectangles |
+| `src/tests_config.rs` | `TestsConfig` and per-test configuration structs |
+| `src/application_config.rs` | `ApplicationConfig` implementation selection and JSONC methods |
 | `src/text_region.rs` | `Bounds`, `TextRegion`, and `TranslatedText` |
 | `src/frames_sourcer.rs` | `FramesSourcer` contract and `FrameSourceError` |
 | `src/frames_ocr.rs` | `FramesOCR` contract and `RecognitionError` |
 | `src/text_translator.rs` | `TextTranslator` contract and `TranslationError` |
 | `src/text_renderer.rs` | `TextRenderer` contract and `RenderingError` |
-| `src/config.rs` | Typed `.env` reader and `ConfigError` |
 | `src/factory.rs` | Class-name based composition and `FactoryError` |
 | `src/implementations/` | Concrete backends for the four contracts |
 | `src/lib.rs` | Public module and re-export surface |
@@ -55,7 +57,7 @@ flowchart LR
 
 ### Frame
 
-`Frame` owns a validated RGBA8 pixel buffer.
+`Frame` owns a name and a validated RGBA8 pixel buffer.
 
 Invariants:
 
@@ -64,6 +66,14 @@ Invariants:
 - A buffer length mismatch is rejected through `FrameError::PixelBufferSizeMismatch`.
 
 The type is immutable through its public read-only accessors. Renderers copy the buffer and return a new `Frame` instead of mutating the input.
+
+### FramesConfig
+
+`FramesConfig` holds a `frames` list of `NamedRect` values. Each `NamedRect` pairs a name with a `Bounds` rectangle. The configuration preserves order and does not perform additional rectangle validation.
+
+### TestsConfig
+
+`TestsConfig` groups a separate configuration struct for each test case. It currently exposes `ShadowrunCdTestConfig`, which owns a `FramesConfig`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -112,32 +122,48 @@ The application owns orchestration. Individual stages do not call each other, wh
 
 ## Configuration and composition
 
-`.env` contains only implementation class names:
+Implementation selection is defined by `ApplicationConfig`. The current test configuration is `test-case/tests-application-config.jsonc`:
 
-```env
-FRAMES_SOURCER=ImageFramesSourcer
-FRAMES_OCR=FixtureFramesOCR
-TEXT_TRANSLATOR=DictionaryTextTranslator
-TEXT_RENDERER=BlockTextRenderer
+```jsonc
+{
+  "FRAMES_SOURCER": "ImageFramesSourcer",
+  "FRAMES_OCR": "FixtureFramesOCR",
+  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
+  "TEXT_RENDERER": "BlockTextRenderer"
+}
 ```
 
-`Config::load` reads and parses the file directly. It does not read process environment variables and does not use a dotenv dependency. The parser:
+`ApplicationConfig` uses Serde with screaming snake case field names, matching the original environment keys. `ApplicationConfig::from_jsonc` parses JSONC through `json5`; `ApplicationConfig::to_jsonc` emits pretty JSON through `serde_json`.
 
-- ignores blank lines and lines beginning with `#`,
-- splits entries on the first `=`,
-- trims surrounding whitespace and quote characters,
-- rejects malformed lines and missing keys.
+`src/factory.rs` is the composition root. Each factory function reads one implementation name from `ApplicationConfig` and constructs the matching implementation:
 
-`src/factory.rs` is the composition root. Each factory function reads one class name and constructs the matching implementation:
+| Factory function | Configuration getter | Configuration key |
+| --- | --- | --- |
+| `create_frames_sourcer` | `frames_sourcer()` | `FRAMES_SOURCER` |
+| `create_frames_ocr` | `frames_ocr()` | `FRAMES_OCR` |
+| `create_text_translator` | `text_translator()` | `TEXT_TRANSLATOR` |
+| `create_text_renderer` | `text_renderer()` | `TEXT_RENDERER` |
 
-| Factory function | Environment key |
-| --- | --- |
-| `create_frames_sourcer` | `FRAMES_SOURCER` |
-| `create_frames_ocr` | `FRAMES_OCR` |
-| `create_text_translator` | `TEXT_TRANSLATOR` |
-| `create_text_renderer` | `TEXT_RENDERER` |
+`ImageFramesSourcer` uses the fixed file `test-case/Shadowrun_02.png` when created through the factory. The constructor `ImageFramesSourcer::open(path)` remains available for explicit paths. Because the application configuration is restricted to class names, backend-specific settings are currently constants inside implementations rather than configuration values.
 
-`ImageFramesSourcer` uses the fixed file `test-case/Shadowrun_02.png` when created through the factory. The constructor `ImageFramesSourcer::open(path)` remains available for explicit paths. Because `.env` is restricted to class names, backend-specific settings are currently constants inside implementations rather than configuration values.
+### Configuration serialization
+
+`ApplicationConfig`, `TestsConfig`, and their nested configuration types derive Serde serialization and deserialization. All JSONC entry points use `json5`, which supports comments and trailing commas. Serialization uses `serde_json` and emits pretty JSON. `test-case/tests-application-config.jsonc` and `test-case/tests-config.jsonc` are the serialized representations of the current configurations.
+
+`ShadowrunCdTestConfig` flattens its `FramesConfig`, so the JSONC shape is:
+
+```jsonc
+{
+  "shadowrun_cd": {
+    "frames": [
+      {
+        "name": "Actions Menu",
+        "rect": { "x": 18, "y": 86, "width": 91, "height": 68 }
+      }
+    ]
+  }
+}
+```
 
 ## Concrete implementations
 
@@ -162,8 +188,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame` |
-| `ConfigError` | `Io`, `MalformedLine`, `MissingKey` |
-| `FactoryError` | `Config`, `FrameSource`, `UnknownImplementation` |
+| `FactoryError` | `FrameSource`, `UnknownImplementation` |
 
 Errors are propagated with `?`. `FactoryError` preserves source errors where a dedicated variant exists. No stage panics on malformed external input; invalid dimensions, missing configuration, unknown class names, and out-of-bounds rendering are represented as errors.
 
@@ -171,9 +196,10 @@ Errors are propagated with `?`. `FactoryError` preserves source errors where a d
 
 Integration tests live in `tests/`:
 
-- `tests/support/mod.rs` loads the repository `.env` from `CARGO_MANIFEST_DIR`.
-- `frames_ocr_test.rs`, `text_translator_test.rs`, and `text_renderer_test.rs` obtain concrete types through the factory.
-- `frames_sourcer_test.rs` instantiates `ImageFramesSourcer` directly with `test-case/Shadowrun_02.png` to verify decoding and frame exhaustion.
+- `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
+- `frames_sourcer_test.rs`, `frames_ocr_test.rs`, `text_translator_test.rs`, and `text_renderer_test.rs` obtain concrete types through the factory.
+- `application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
+- `tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates its contents, and round-trips it through JSONC serialization and deserialization.
 
 Coverage includes:
 
@@ -183,7 +209,9 @@ Coverage includes:
 - single and batch translation,
 - unknown dictionary entries,
 - rendered region color, unchanged frame dimensions,
-- out-of-bounds region rejection.
+- out-of-bounds region rejection,
+- application configuration loading and round-trip serialization,
+- test configuration loading and round-trip serialization.
 
 Tests run with `cargo test`. Linting uses `cargo clippy --all-targets -- -D warnings`; formatting uses `cargo fmt --check`.
 
@@ -191,7 +219,7 @@ Tests run with `cargo test`. Linting uses `cargo clippy --all-targets -- -D warn
 
 ### Trait objects at composition boundaries
 
-Traits keep the pipeline independent of backends. Factory functions return `Box<dyn Trait>` because `.env` selects implementations at runtime and each stage has a single active backend. Static generics would require the selection to be known at compile time.
+Traits keep the pipeline independent of backends. Factory functions return `Box<dyn Trait>` because `ApplicationConfig` selects implementations at runtime and each stage has a single active backend. Static generics would require the selection to be known at compile time.
 
 ### Synchronous contracts
 
@@ -205,9 +233,9 @@ The current contracts are synchronous and single-threaded. This keeps the pipeli
 
 Each stage has an error type specific to its failure modes. A shared pipeline error would reduce type precision and make backend-specific failures harder to distinguish.
 
-### Class names only in `.env`
+### Class names only in application configuration
 
-Configuration is limited to selecting implementations. This keeps environment files stable and free of secrets or backend-specific options. The tradeoff is that concrete backends currently need constructor defaults for settings such as file paths, colors, and fixture data.
+Configuration is limited to selecting implementations. This keeps configuration files stable and free of secrets or backend-specific options. The tradeoff is that concrete backends currently need constructor defaults for settings such as file paths, colors, and fixture data.
 
 ## Extension guide
 
@@ -216,7 +244,7 @@ To add a backend:
 1. Implement the relevant trait under `src/implementations/`.
 2. Export the type from `src/implementations/mod.rs`.
 3. Add a match arm in the corresponding factory function in `src/factory.rs`.
-4. Select the class name in `.env` and `.env.example`.
+4. Select the class name in `test-case/tests-application-config.jsonc`.
 5. Add an integration test that exercises the contract.
 
 Production backends will likely need additional design work:
@@ -226,7 +254,7 @@ Production backends will likely need additional design work:
 - Rendering: glyph layout, font loading, text fitting, and background preservation.
 - Source: video decoding, directory traversal, and frame timestamps.
 
-If backends require configurable paths, credentials, or tuning parameters, the configuration model should be extended deliberately rather than adding ad hoc environment reads inside implementations.
+If backends require configurable paths, credentials, or tuning parameters, the configuration model should be extended deliberately rather than adding ad hoc file reads inside implementations.
 
 ## Current limitations
 
@@ -235,4 +263,4 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - Rendering produces colored blocks rather than text glyphs.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
-- `.env` supports implementation selection only.
+- `ApplicationConfig` supports implementation selection only.

@@ -31,7 +31,7 @@ impl TextRenderer for BlockTextRenderer {
             }
             fill_bounds(&mut rgba_pixels, frame.width(), bounds, COLOR);
         }
-        Frame::new(frame.width(), frame.height(), rgba_pixels)
+        Frame::new(frame.name(), frame.width(), frame.height(), rgba_pixels)
             .map_err(|error| RenderingError::InvalidFrame(error.to_string()))
     }
 }

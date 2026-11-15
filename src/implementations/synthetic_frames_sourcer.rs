@@ -4,6 +4,7 @@ use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 const FRAME_WIDTH: u32 = 32;
 const FRAME_HEIGHT: u32 = 24;
 const FRAME_COUNT: usize = 2;
+const FRAME_NAME: &str = "Synthetic";
 const FILL_COLOR: [u8; 4] = [12, 34, 56, 255];
 
 #[derive(Debug, Clone)]
@@ -36,7 +37,7 @@ impl FramesSourcer for SyntheticFramesSourcer {
         for pixel in rgba_pixels.as_chunks_mut::<CHANNELS_PER_PIXEL>().0 {
             pixel.copy_from_slice(&FILL_COLOR);
         }
-        Frame::new(FRAME_WIDTH, FRAME_HEIGHT, rgba_pixels)
+        Frame::new(FRAME_NAME, FRAME_WIDTH, FRAME_HEIGHT, rgba_pixels)
             .map(Some)
             .map_err(|error| FrameSourceError::Decoding(error.to_string()))
     }

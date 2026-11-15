@@ -16,7 +16,11 @@ impl ImageFramesSourcer {
         })?;
         let rgba_image = image.to_rgba8();
         let (width, height) = rgba_image.dimensions();
-        let frame = Frame::new(width, height, rgba_image.into_raw())
+        let frame_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let frame = Frame::new(frame_name, width, height, rgba_image.into_raw())
             .map_err(|error| FrameSourceError::Decoding(error.to_string()))?;
         Ok(Self { frame: Some(frame) })
     }

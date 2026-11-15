@@ -1,20 +1,21 @@
-use std::error::Error;
-use std::path::PathBuf;
+mod support;
 
-use frames_translator::frames_sourcer::FramesSourcer;
-use frames_translator::implementations::ImageFramesSourcer;
+use std::error::Error;
+
+use frames_translator::factory::create_frames_sourcer;
 
 const EXPECTED_FRAME_COUNT: usize = 1;
+const EXPECTED_FRAME_NAME: &str = "Shadowrun_02.png";
 const EXPECTED_FRAME_WIDTH: u32 = 320;
 const EXPECTED_FRAME_HEIGHT: u32 = 224;
-const IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
 
 #[test]
-fn frames_sourcer_reads_the_shadowrun_image() -> Result<(), Box<dyn Error>> {
-    let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(IMAGE_PATH);
-    let mut frames_sourcer = ImageFramesSourcer::open(image_path)?;
+fn frames_sourcer_yields_expected_frames() -> Result<(), Box<dyn Error>> {
+    let application_config = support::load_application_config()?;
+    let mut frames_sourcer = create_frames_sourcer(&application_config)?;
     let mut actual_frame_count = 0;
     while let Some(frame) = frames_sourcer.next_frame()? {
+        assert_eq!(frame.name(), EXPECTED_FRAME_NAME);
         assert_eq!(frame.width(), EXPECTED_FRAME_WIDTH);
         assert_eq!(frame.height(), EXPECTED_FRAME_HEIGHT);
         assert_eq!(

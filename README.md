@@ -22,8 +22,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed design and extensi
 
 Core models:
 
-- `Frame` stores validated RGBA pixel data and dimensions.
+- `Frame` stores a name, validated RGBA pixel data, and dimensions.
 - `Bounds` describes a rectangular region.
+- `FramesConfig` holds named frame rectangles.
+- `TestsConfig` groups separate configuration structs for each test case.
 - `TextRegion` pairs recognized text with its bounds.
 - `TranslatedText` pairs a source region with translated text.
 
@@ -41,28 +43,28 @@ Core models:
 
 ## Configuration
 
-Copy the example configuration:
+Implementation selection is defined by `ApplicationConfig`. The current test configuration is `test-case/tests-application-config.jsonc`:
 
-```powershell
-Copy-Item .env.example .env
+```jsonc
+{
+  "FRAMES_SOURCER": "ImageFramesSourcer",
+  "FRAMES_OCR": "FixtureFramesOCR",
+  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
+  "TEXT_RENDERER": "BlockTextRenderer"
+}
 ```
 
-`.env` contains class names only:
+`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
-```env
-FRAMES_SOURCER=ImageFramesSourcer
-FRAMES_OCR=FixtureFramesOCR
-TEXT_TRANSLATOR=DictionaryTextTranslator
-TEXT_RENDERER=BlockTextRenderer
-```
-
-`Config` loads this file and `factory` creates the selected implementation. To add a backend, implement the relevant trait and add its class name to the factory and `.env`.
+Test-case frame layouts are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
 ## Library usage
 
 ```rust
+use std::fs;
+
 use frames_translator::{
-    Config,
+    ApplicationConfig,
     create_frames_ocr,
     create_frames_sourcer,
     create_text_renderer,
@@ -70,11 +72,12 @@ use frames_translator::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::load(".env")?;
-    let mut frames_sourcer = create_frames_sourcer(&config)?;
-    let frames_ocr = create_frames_ocr(&config)?;
-    let mut text_translator = create_text_translator(&config)?;
-    let text_renderer = create_text_renderer(&config)?;
+    let config_source = fs::read_to_string("test-case/tests-application-config.jsonc")?;
+    let application_config = ApplicationConfig::from_jsonc(&config_source)?;
+    let mut frames_sourcer = create_frames_sourcer(&application_config)?;
+    let frames_ocr = create_frames_ocr(&application_config)?;
+    let mut text_translator = create_text_translator(&application_config)?;
+    let text_renderer = create_text_renderer(&application_config)?;
 
     if let Some(frame) = frames_sourcer.next_frame()? {
         let regions = frames_ocr.recognize(&frame)?;
@@ -91,22 +94,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```text
 src/
-  config.rs                    Typed .env loading
+  application_config.rs        ApplicationConfig JSONC loading
   factory.rs                   Class-name based implementation selection
-  frame.rs                     RGBA frame model
+  frame.rs                     Named RGBA frame model
+  frames_config.rs             Named frame rectangles
   frames_ocr.rs                OCR trait and error
   frames_sourcer.rs            Frame source trait and error
+  tests_config.rs              Per-test configuration structs
   text_region.rs               Bounds, TextRegion, TranslatedText
   text_renderer.rs             Renderer trait and error
   text_translator.rs           Translator trait and error
   implementations/             Concrete implementations
 tests/
+  application_config_test.rs
   frames_ocr_test.rs
   frames_sourcer_test.rs
+  tests_config_test.rs
   text_renderer_test.rs
   text_translator_test.rs
 test-case/
   Shadowrun_02.png             Sample input image
+  tests-application-config.jsonc
+  tests-config.jsonc           Serialized TestsConfig
 ```
 
 ## Build and test

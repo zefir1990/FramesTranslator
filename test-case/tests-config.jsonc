@@ -1,0 +1,16 @@
+{
+  "shadowrun_cd": {
+    "frames": [
+      // "Actions Menu" is used as main gameplay menu in Shadowrun CD
+      {
+        "name": "Actions Menu",
+        "rect": {
+          "x": 18,
+          "y": 86,
+          "width": 91,
+          "height": 68
+        }
+      }
+    ]
+  }
+}
