@@ -205,7 +205,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::frames_config::{FramesConfig, NamedRect};
-    use crate::tests_config::{ShadowrunCdTestConfig, ShadowrunDialogTestConfig};
+    use crate::tests_config::{
+        ShadowrunCdTestConfig, ShadowrunDialogTestConfig, ShadowrunStreetTestConfig,
+    };
 
     #[test]
     fn finds_frame_placement_by_frame_name() {
@@ -237,6 +239,12 @@ mod tests {
                 5,
             ),
             ShadowrunDialogTestConfig::new(
+                FramesConfig::new(Vec::new()),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                5,
+            ),
+            ShadowrunStreetTestConfig::new(
                 FramesConfig::new(Vec::new()),
                 BTreeMap::new(),
                 BTreeMap::new(),

@@ -75,7 +75,7 @@ mod tests {
             "DictionaryTextTranslator",
             "BlockTextRenderer",
             vec![0x000000],
-            vec![0xFCFCFC, 0xFFFFFF],
+            vec![0xFCFCFC, 0xFFFFFF, 0xFCFCB4],
         );
         assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
         assert_eq!(application_config.frames_ocr(), "FixtureFramesOCR");
@@ -90,7 +90,7 @@ mod tests {
         );
         assert_eq!(
             application_config.frames_detection_text_colors(),
-            [0xFCFCFC, 0xFFFFFF]
+            [0xFCFCFC, 0xFFFFFF, 0xFCFCB4]
         );
     }
 }

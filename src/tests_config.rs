@@ -7,16 +7,19 @@ use serde::{Deserialize, Serialize};
 pub struct TestsConfig {
     shadowrun_cd: ShadowrunCdTestConfig,
     shadowrun_dialog: ShadowrunDialogTestConfig,
+    shadowrun_street: ShadowrunStreetTestConfig,
 }
 
 impl TestsConfig {
     pub fn new(
         shadowrun_cd: ShadowrunCdTestConfig,
         shadowrun_dialog: ShadowrunDialogTestConfig,
+        shadowrun_street: ShadowrunStreetTestConfig,
     ) -> Self {
         Self {
             shadowrun_cd,
             shadowrun_dialog,
+            shadowrun_street,
         }
     }
 
@@ -26,6 +29,10 @@ impl TestsConfig {
 
     pub fn shadowrun_dialog(&self) -> &ShadowrunDialogTestConfig {
         &self.shadowrun_dialog
+    }
+
+    pub fn shadowrun_street(&self) -> &ShadowrunStreetTestConfig {
+        &self.shadowrun_street
     }
 
     pub fn from_jsonc(source: &str) -> Result<Self, json5::Error> {
@@ -125,6 +132,50 @@ impl ShadowrunDialogTestConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShadowrunStreetTestConfig {
+    #[serde(flatten)]
+    frames: FramesConfig,
+    #[serde(rename = "expectedResultOCR")]
+    expected_result_ocr: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "expectedTranslationResult")]
+    expected_translation_result: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "timeoutSeconds")]
+    timeout_seconds: u64,
+}
+
+impl ShadowrunStreetTestConfig {
+    pub fn new(
+        frames: FramesConfig,
+        expected_result_ocr: BTreeMap<String, Vec<String>>,
+        expected_translation_result: BTreeMap<String, Vec<String>>,
+        timeout_seconds: u64,
+    ) -> Self {
+        Self {
+            frames,
+            expected_result_ocr,
+            expected_translation_result,
+            timeout_seconds,
+        }
+    }
+
+    pub fn frames(&self) -> &FramesConfig {
+        &self.frames
+    }
+
+    pub fn expected_result_ocr(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.expected_result_ocr
+    }
+
+    pub fn expected_translation_result(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.expected_translation_result
+    }
+
+    pub fn timeout_seconds(&self) -> u64 {
+        self.timeout_seconds
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +224,7 @@ mod tests {
                 5,
             ),
             empty_dialog_config(),
+            empty_street_config(),
         );
         let shadowrun_cd = tests_config.shadowrun_cd();
         assert_eq!(shadowrun_cd.frames().frames().len(), 2);
@@ -216,6 +268,7 @@ mod tests {
                 expected_translation_result.clone(),
                 5,
             ),
+            empty_street_config(),
         );
         let shadowrun_dialog = tests_config.shadowrun_dialog();
         assert_eq!(shadowrun_dialog.frames().frames().len(), 1);
@@ -230,6 +283,45 @@ mod tests {
         assert_eq!(shadowrun_dialog.timeout_seconds(), 5);
     }
 
+    #[test]
+    fn tests_config_exposes_shadowrun_street_test_config() {
+        let frames_config = FramesConfig::new(vec![NamedRect::new(
+            "Street Dialog",
+            Bounds::new(26, 158, 267, 52),
+        )]);
+        let expected_result_ocr = BTreeMap::from([(
+            "Street Dialog".to_owned(),
+            ["渋谷は", "とてもきらびやかな街だ"]
+                .map(str::to_owned)
+                .to_vec(),
+        )]);
+        let expected_translation_result = BTreeMap::from([(
+            "Street Dialog".to_owned(),
+            ["Shibuya", "A very nice city"].map(str::to_owned).to_vec(),
+        )]);
+        let tests_config = TestsConfig::new(
+            empty_cd_config(),
+            empty_dialog_config(),
+            ShadowrunStreetTestConfig::new(
+                frames_config,
+                expected_result_ocr.clone(),
+                expected_translation_result.clone(),
+                5,
+            ),
+        );
+        let shadowrun_street = tests_config.shadowrun_street();
+        assert_eq!(shadowrun_street.frames().frames().len(), 1);
+        let street_dialog = &shadowrun_street.frames().frames()[0];
+        assert_eq!(street_dialog.name(), "Street Dialog");
+        assert_eq!(street_dialog.rect(), Bounds::new(26, 158, 267, 52));
+        assert_eq!(shadowrun_street.expected_result_ocr(), &expected_result_ocr);
+        assert_eq!(
+            shadowrun_street.expected_translation_result(),
+            &expected_translation_result
+        );
+        assert_eq!(shadowrun_street.timeout_seconds(), 5);
+    }
+
     fn empty_cd_config() -> ShadowrunCdTestConfig {
         ShadowrunCdTestConfig::new(
             FramesConfig::new(Vec::new()),
@@ -241,6 +333,15 @@ mod tests {
 
     fn empty_dialog_config() -> ShadowrunDialogTestConfig {
         ShadowrunDialogTestConfig::new(
+            FramesConfig::new(Vec::new()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            5,
+        )
+    }
+
+    fn empty_street_config() -> ShadowrunStreetTestConfig {
+        ShadowrunStreetTestConfig::new(
             FramesConfig::new(Vec::new()),
             BTreeMap::new(),
             BTreeMap::new(),

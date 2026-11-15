@@ -13,7 +13,7 @@ const OCR_SCRIPT_PATH: &str = "scripts/manga_ocr_worker.py";
 const READY_RESPONSE: &str = "READY";
 const INK_LUMINANCE_THRESHOLD: u32 = 160;
 const LINE_VERTICAL_PADDING: u32 = 1;
-const LINE_HORIZONTAL_PADDING: u32 = 6;
+const LINE_HORIZONTAL_PADDING: u32 = 8;
 const MINIMUM_LINE_HEIGHT: u32 = 4;
 
 static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);

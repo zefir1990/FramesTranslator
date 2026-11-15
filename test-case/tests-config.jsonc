@@ -78,5 +78,32 @@
       ]
     },
     "timeoutSeconds": 5
+  },
+  "shadowrun_street": {
+    "frames": [
+      // Dialog text box shown during the Shadowrun CD Shibuya street scene
+      {
+        "name": "Street Dialog",
+        "rect": {
+          "x": 26,
+          "y": 158,
+          "width": 267,
+          "height": 52
+        }
+      }
+    ],
+    "expectedResultOCR": {
+      "Street Dialog": [
+        "渋谷は",
+        "とてもきらびやかな街だ"
+      ]
+    },
+    "expectedTranslationResult": {
+      "Street Dialog": [
+        "Shibuya",
+        "A very nice city"
+      ]
+    },
+    "timeoutSeconds": 5
   }
 }

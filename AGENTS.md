@@ -67,7 +67,7 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
 }
 ```
 
@@ -81,7 +81,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 
 `ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
 
-`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. `TestsConfig` exposes `shadowrun_cd` and `shadowrun_dialog` cases. Each case's `frames` lists the expected detected frames with their names, positions, and dimensions. `expectedResultOCR` and `expectedTranslationResult` are dictionaries keyed by expected frame name. `timeoutSeconds` sets the SDL preview duration per frame.
+`test-case/tests-config.jsonc` is deserialized into `TestsConfig` with `TestsConfig::from_jsonc` and serialized with `TestsConfig::to_jsonc`. `TestsConfig` exposes `shadowrun_cd`, `shadowrun_dialog`, and `shadowrun_street` cases. Each case's `frames` lists the expected detected frames with their names, positions, and dimensions. `expectedResultOCR` and `expectedTranslationResult` are dictionaries keyed by expected frame name. `timeoutSeconds` sets the SDL preview duration per frame.
 
 ## Concrete implementations
 
@@ -104,16 +104,17 @@ These are development and test backends, not production implementations.
 Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
-- `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels and the Shadowrun intro dialog box with `FramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
+- `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels and the intro and street dialog boxes with `FramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
 - `tests/frames_ocr_test.rs` detects both Shadowrun CD frames through the source factory, recognizes four text lines per frame through `MangaFramesOCR`, and asserts the exact line texts keyed by expected frame name.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
 - `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline for both detected frames and requires four recognized and translated lines per frame. The SDL window closes after `timeoutSeconds`.
 - `tests/shadowrun_dialog_pipeline_test.rs` runs the Shadowrun intro dialog through detection, `MangaFramesOCR`, `ArgosTextTranslator`, and `BlockTextRenderer`, asserting two recognized and translated lines and their rendered blocks.
+- `tests/shadowrun_street_pipeline_test.rs` runs the Shadowrun Shibuya street dialog through the same pipeline and asserts its two recognized and translated lines and rendered blocks.
 - `tests/frames_sourcer_test.rs` constructs the detector through the factory and verifies both detected frames against the configured positions and dimensions in `test-case/tests-config.jsonc`.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
-The sample images are `320x224`. For `Shadowrun_02.png`, the detector must produce `"Actions Menu"` at `91x68` and `(18, 86)` followed by `"Contacts"` at `75x68` and `(146, 86)`. For `Shadowrun_01.png`, it must produce the `"Dialog"` box at `267x52` and `(26, 158)`. Tests assert PNG decoding, detected dimensions and crop pixels, per-frame Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
+The sample images are `320x224`. For `Shadowrun_02.png`, the detector must produce `"Actions Menu"` at `91x68` and `(18, 86)` followed by `"Contacts"` at `75x68` and `(146, 86)`. For `Shadowrun_01.png`, it must produce the `"Dialog"` box at `267x52` and `(26, 158)`. For `Shadowrun_03.png`, it must produce the `"Street Dialog"` box at `267x52` and `(26, 158)`. Tests assert PNG decoding, detected dimensions and crop pixels, per-frame Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
 
 When adding an implementation:
 

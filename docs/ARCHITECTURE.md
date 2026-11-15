@@ -73,7 +73,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 
 ### TestsConfig
 
-`TestsConfig` groups a separate configuration struct for each test case. It exposes `ShadowrunCdTestConfig` for the gameplay menus and `ShadowrunDialogTestConfig` for the intro dialog box. Each owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
+`TestsConfig` groups a separate configuration struct for each test case. It exposes `ShadowrunCdTestConfig` for the gameplay menus, `ShadowrunDialogTestConfig` for the intro dialog box, and `ShadowrunStreetTestConfig` for the Shibuya street dialog box. Each owns a `FramesConfig` describing the expected detected frames, `BTreeMap` dictionaries of expected OCR lines under `expectedResultOCR` and expected translations under `expectedTranslationResult` keyed by expected frame name, and the renderer preview duration under `timeoutSeconds`. Additional test cases should add their own configuration struct rather than sharing one generic shape.
 
 ### Bounds
 
@@ -131,7 +131,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
 }
 ```
 
@@ -148,9 +148,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 `ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions.
 
-`FramesDetectorSourcer` uses the fixed `Shadowrun_02.png` image when created through the factory and reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. A pixel matches a color set when it equals any color in that set. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` directly with the same configured color arrays.
+`FramesDetectorSourcer` uses the fixed `Shadowrun_02.png` image when created through the factory and reads `framesDetectionBackgroundColors` and `framesDetectionTextColors` from `ApplicationConfig`. Both are arrays of 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. A pixel matches a color set when it equals any color in that set. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`. Integration tests open `Shadowrun_01.png` and `Shadowrun_03.png` directly with the same configured color arrays.
 
-The detector produces two frames for `Shadowrun_02.png` and one frame for `Shadowrun_01.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
+The detector produces two frames for `Shadowrun_02.png` and one frame each for `Shadowrun_01.png` and `Shadowrun_03.png`. Integration tests validate them against the expected `frames` entries in `test-case/tests-config.jsonc` by order, name prefix, position, dimensions, and crop pixels. OCR and translation expectations are looked up by the expected frame name, so each panel and the dialog box are validated independently.
 
 Because the application configuration remains focused on implementation selection and the two detector colors, other backend-specific settings are constants inside implementations rather than configuration values.
 
@@ -195,6 +195,21 @@ Because the application configuration remains focused on implementation selectio
     },
     "expectedTranslationResult": {
       "Dialog": ["Unexpected", "It was a long time."]
+    },
+    "timeoutSeconds": 5
+  },
+  "shadowrun_street": {
+    "frames": [
+      {
+        "name": "Street Dialog",
+        "rect": { "x": 26, "y": 158, "width": 267, "height": 52 }
+      }
+    ],
+    "expectedResultOCR": {
+      "Street Dialog": ["渋谷は", "とてもきらびやかな街だ"]
+    },
+    "expectedTranslationResult": {
+      "Street Dialog": ["Shibuya", "A very nice city"]
     },
     "timeoutSeconds": 5
   }
@@ -264,21 +279,22 @@ Integration tests live in `tests/`:
 - `frames_sourcer_test.rs` validates both detected frames against the expected names, positions, dimensions, and crop pixels from `tests-config.jsonc`.
 - `frames_ocr_test.rs` validates four OCR lines per detected frame using the `expectedResultOCR` dictionary keyed by expected frame name.
 - `shadowrun_cd_pipeline_test.rs` validates four translations per detected frame using the `expectedTranslationResult` dictionary and renders both frames.
-- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_02.png` and `test-case/Shadowrun_01.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
+- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_01.png`, `test-case/Shadowrun_02.png`, and `test-case/Shadowrun_03.png` directly with the configured detection colors, asserts the detected frame order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
 - `shadowrun_dialog_pipeline_test.rs` runs the `Shadowrun_01.png` dialog through detection, OCR, translation, and `BlockTextRenderer`, asserting both recognized lines, both translations, and the rendered blocks.
+- `shadowrun_street_pipeline_test.rs` runs the `Shadowrun_03.png` street dialog through the same pipeline and asserts its two recognized lines, translations, and rendered blocks.
 - `application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates its contents, and round-trips it through JSONC serialization and deserialization.
 
 Coverage includes:
 
 - PNG decoding, detected frame dimensions and crop pixel fidelity,
-- color-based frame detection of both menu panels and the intro dialog box, reading-order output, multi-color matching, detection thresholds, and invalid color rejection,
+- color-based frame detection of both menu panels and the intro and street dialog boxes, reading-order output, multi-color matching, detection thresholds, and invalid color rejection,
 - source termination,
 - exact per-frame OCR regions and frame containment,
-- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, and `"Dialog"` text extraction,
+- Manga OCR protocol response parsing, line segmentation, and real `"Actions Menu"`, `"Contacts"`, `"Dialog"`, and `"Street Dialog"` text extraction,
 - Argos Translate protocol parsing and Japanese to English translation,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
-- full Shadowrun intro dialog detection to OCR to translation to block-rendering pipeline,
+- full Shadowrun intro and street dialog detection to OCR to translation to block-rendering pipelines,
 - SDL preview timeout behavior,
 - single and batch translation,
 - unknown dictionary entries,

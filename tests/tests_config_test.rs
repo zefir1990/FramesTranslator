@@ -58,6 +58,24 @@ fn tests_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn Error>
         ["Unexpected", "It was a long time."],
     );
     assert_eq!(dialog.timeout_seconds(), 5);
+    let street = tests_config.shadowrun_street();
+    assert_eq!(street.frames().frames().len(), 1);
+    assert_eq!(street.frames().frames()[0].name(), "Street Dialog");
+    assert_eq!(
+        street.frames().frames()[0].rect(),
+        Bounds::new(26, 158, 267, 52)
+    );
+    assert_expected_texts(
+        street.expected_result_ocr(),
+        "Street Dialog",
+        ["渋谷は", "とてもきらびやかな街だ"],
+    );
+    assert_expected_texts(
+        street.expected_translation_result(),
+        "Street Dialog",
+        ["Shibuya", "A very nice city"],
+    );
+    assert_eq!(street.timeout_seconds(), 5);
     let serialized = tests_config.to_jsonc()?;
     let restored = TestsConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, tests_config);

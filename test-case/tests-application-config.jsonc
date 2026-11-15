@@ -9,6 +9,7 @@
   ],
   "framesDetectionTextColors": [
     0xfcfcfc,
-    0xffffff
+    0xffffff,
+    0xfcfcb4
   ]
 }

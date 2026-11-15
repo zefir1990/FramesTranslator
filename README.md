@@ -56,13 +56,13 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
   "framesDetectionBackgroundColors": [0x000000],
-  "framesDetectionTextColors": [0xfcfcfc, 0xffffff]
+  "framesDetectionTextColors": [0xfcfcfc, 0xffffff, 0xfcfcb4]
 }
 ```
 
 `ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. A frame matches when its background pixels use any configured background color and its text pixels use any configured text color. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
-Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels and a `shadowrun_dialog` case for the intro dialog box. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
+Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, and a `shadowrun_street` case for the Shibuya street dialog box. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
 ## Library usage
 
@@ -122,12 +122,14 @@ tests/
   frames_sourcer_test.rs
   shadowrun_cd_pipeline_test.rs
   shadowrun_dialog_pipeline_test.rs
+  shadowrun_street_pipeline_test.rs
   tests_config_test.rs
   text_renderer_test.rs
   text_translator_test.rs
 test-case/
   Shadowrun_01.png             Intro dialog sample image
   Shadowrun_02.png             Gameplay menu sample image
+  Shadowrun_03.png             Street dialog sample image
   tests-application-config.jsonc
   tests-config.jsonc           Serialized TestsConfig
 third-party/
@@ -144,7 +146,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, color-based detection of both Shadowrun CD panels and the Shadowrun intro dialog box, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, color-based detection of both Shadowrun CD panels and the intro and street dialog boxes, expected dimensions and crop pixels, frame exhaustion, per-frame OCR region bounds and line extraction, per-frame batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

@@ -21,7 +21,7 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     );
     assert_eq!(
         application_config.frames_detection_text_colors(),
-        [0xFCFCFC, 0xFFFFFF]
+        [0xFCFCFC, 0xFFFFFF, 0xFCFCB4]
     );
     let serialized = application_config.to_jsonc()?;
     let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;
