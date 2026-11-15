@@ -12,6 +12,7 @@ FramesTranslator is a Rust image translation pipeline. The current codebase defi
 - Dependency: `image` with only the `png` feature enabled
 - Serialization: `serde`, `serde_json`, and `json5`
 - OCR backend: `manga-ocr` in `.venv` with Python 3.13 and `scripts/manga_ocr_worker.py`
+- Translation backend: `argostranslate` in `.venv` with Japanese packages and `scripts/argos_translate_worker.py`
 - No async runtime, database, network client, or dotenv dependency
 
 ## Commands
@@ -58,7 +59,7 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 {
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
-  "textTranslator": "DictionaryTextTranslator",
+  "textTranslator": "ArgosTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
 ```
@@ -80,6 +81,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
 | `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker in `.venv` |
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
+| `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
 
 These are development and test backends, not production implementations.
@@ -90,6 +92,7 @@ Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes it through `MangaFramesOCR`, and asserts recognized Japanese text contains `話す`.
+- `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
 - `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.

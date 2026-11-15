@@ -128,7 +128,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 {
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
-  "textTranslator": "DictionaryTextTranslator",
+  "textTranslator": "ArgosTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
 ```
@@ -174,6 +174,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
 | `MangaFramesOCR` | `FramesOCR` | Sends frame PNGs to a persistent `manga-ocr` Python worker | Uses the whole frame as text bounds; Japanese-focused model; requires `.venv` |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
+| `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled.
@@ -195,6 +196,8 @@ sequenceDiagram
     Worker-->>OCR: OK text
 ```
 
+`ArgosTextTranslator` starts `.venv/Scripts/python.exe` with `scripts/argos_translate_worker.py ja en` and keeps the worker alive. Requests and responses are JSON lines, so translated text can contain whitespace without breaking the protocol. The default language pair is Japanese to English; `with_languages` accepts another installed pair.
+
 ## Error strategy
 
 Each layer has a typed error enum implementing `std::error::Error`:
@@ -206,7 +209,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame` |
-| `FactoryError` | `FrameSource`, `Recognition`, `Io`, `TestsConfig`, `UnknownImplementation` |
+| `FactoryError` | `FrameSource`, `Recognition`, `Translation`, `Io`, `TestsConfig`, `UnknownImplementation` |
 
 Errors are propagated with `?`. `FactoryError` preserves source errors where a dedicated variant exists. No stage panics on malformed external input; invalid dimensions, missing configuration, unknown class names, and out-of-bounds rendering are represented as errors.
 
@@ -225,6 +228,7 @@ Coverage includes:
 - source termination,
 - exact OCR regions and frame containment,
 - Manga OCR protocol response parsing and real `"Actions Menu"` text extraction,
+- Argos Translate protocol parsing and Japanese to English translation,
 - single and batch translation,
 - unknown dictionary entries,
 - rendered region color, unchanged frame dimensions,

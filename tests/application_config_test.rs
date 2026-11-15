@@ -13,10 +13,7 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     let application_config = ApplicationConfig::from_jsonc(&contents)?;
     assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
     assert_eq!(application_config.frames_ocr(), "MangaFramesOCR");
-    assert_eq!(
-        application_config.text_translator(),
-        "DictionaryTextTranslator"
-    );
+    assert_eq!(application_config.text_translator(), "ArgosTextTranslator");
     assert_eq!(application_config.text_renderer(), "BlockTextRenderer");
     let serialized = application_config.to_jsonc()?;
     let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;

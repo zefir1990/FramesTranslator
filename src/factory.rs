@@ -8,12 +8,12 @@ use crate::application_config::ApplicationConfig;
 use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
-    BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR, ImageFramesSourcer,
-    MangaFramesOCR, SyntheticFramesSourcer,
+    ArgosTextTranslator, BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR,
+    ImageFramesSourcer, MangaFramesOCR, SyntheticFramesSourcer,
 };
 use crate::tests_config::TestsConfig;
 use crate::text_renderer::TextRenderer;
-use crate::text_translator::TextTranslator;
+use crate::text_translator::{TextTranslator, TranslationError};
 
 const DEFAULT_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
 const DEFAULT_TESTS_CONFIG_PATH: &str = "test-case/tests-config.jsonc";
@@ -54,6 +54,7 @@ pub fn create_text_translator(
 ) -> Result<Box<dyn TextTranslator>, FactoryError> {
     match config.text_translator() {
         "DictionaryTextTranslator" => Ok(Box::new(DictionaryTextTranslator::new())),
+        "ArgosTextTranslator" => Ok(Box::new(ArgosTextTranslator::new()?)),
         name => Err(FactoryError::UnknownImplementation {
             variable: "textTranslator",
             name: name.to_owned(),
@@ -89,6 +90,7 @@ fn manifest_path(relative_path: &str) -> PathBuf {
 pub enum FactoryError {
     FrameSource(FrameSourceError),
     Recognition(RecognitionError),
+    Translation(TranslationError),
     Io {
         path: PathBuf,
         source: io::Error,
@@ -108,6 +110,7 @@ impl Display for FactoryError {
         match self {
             Self::FrameSource(error) => write!(formatter, "{error}"),
             Self::Recognition(error) => write!(formatter, "{error}"),
+            Self::Translation(error) => write!(formatter, "{error}"),
             Self::Io { path, source } => {
                 write!(formatter, "failed to read {}: {source}", path.display())
             }
@@ -126,6 +129,7 @@ impl Error for FactoryError {
         match self {
             Self::FrameSource(error) => Some(error),
             Self::Recognition(error) => Some(error),
+            Self::Translation(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             Self::TestsConfig { source, .. } => Some(source),
             Self::UnknownImplementation { .. } => None,
@@ -142,5 +146,11 @@ impl From<FrameSourceError> for FactoryError {
 impl From<RecognitionError> for FactoryError {
     fn from(error: RecognitionError) -> Self {
         Self::Recognition(error)
+    }
+}
+
+impl From<TranslationError> for FactoryError {
+    fn from(error: TranslationError) -> Self {
+        Self::Translation(error)
     }
 }

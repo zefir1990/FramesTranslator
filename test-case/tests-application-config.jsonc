@@ -1,6 +1,6 @@
 {
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
-  "textTranslator": "DictionaryTextTranslator",
+  "textTranslator": "ArgosTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }

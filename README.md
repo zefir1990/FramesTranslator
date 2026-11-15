@@ -38,9 +38,10 @@ Core models:
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
 | `FramesOCR` | `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker. |
 | `TextTranslator` | `DictionaryTextTranslator` | Translates text through a fixed dictionary. |
+| `TextTranslator` | `ArgosTextTranslator` | Translates Japanese to English through Argos Translate. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
 
-`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` runs the Python `manga-ocr` package through `.venv` and requires the model to be downloaded on first use.
+`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use.
 
 ## Configuration
 
@@ -50,7 +51,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 {
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
-  "textTranslator": "DictionaryTextTranslator",
+  "textTranslator": "ArgosTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
 ```
@@ -108,6 +109,7 @@ src/
   implementations/             Concrete implementations
 scripts/
   manga_ocr_worker.py           Persistent Manga OCR worker
+  argos_translate_worker.py     Persistent Argos Translate worker
 tests/
   application_config_test.rs
   frames_ocr_test.rs

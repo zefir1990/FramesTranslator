@@ -1,12 +1,12 @@
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::frame::Frame;
 use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::text_region::{Bounds, TextRegion};
+
+use super::python_worker::{PythonWorker, manifest_path};
 
 const PYTHON_EXECUTABLE_PATH: &str = ".venv/Scripts/python.exe";
 const OCR_SCRIPT_PATH: &str = "scripts/manga_ocr_worker.py";
@@ -15,7 +15,7 @@ const READY_RESPONSE: &str = "READY";
 static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct MangaFramesOCR {
-    worker: Mutex<MangaOcrWorker>,
+    worker: Mutex<PythonWorker>,
 }
 
 impl MangaFramesOCR {
@@ -30,12 +30,22 @@ impl MangaFramesOCR {
         python_executable: impl AsRef<Path>,
         script_path: impl AsRef<Path>,
     ) -> Result<Self, RecognitionError> {
-        Ok(Self {
-            worker: Mutex::new(MangaOcrWorker::spawn(
-                python_executable.as_ref(),
-                script_path.as_ref(),
-            )?),
-        })
+        let mut worker = PythonWorker::spawn(python_executable.as_ref(), script_path.as_ref(), &[])
+            .map_err(RecognitionError::RecognitionFailed)?;
+        let readiness = worker
+            .read_line()
+            .map_err(RecognitionError::RecognitionFailed)?;
+        match readiness {
+            Some(response) if response.trim() == READY_RESPONSE => Ok(Self {
+                worker: Mutex::new(worker),
+            }),
+            Some(response) => Err(RecognitionError::RecognitionFailed(format!(
+                "unexpected Manga OCR readiness response: {response:?}"
+            ))),
+            None => Err(RecognitionError::RecognitionFailed(
+                "Manga OCR worker exited before becoming ready".to_owned(),
+            )),
+        }
     }
 }
 
@@ -45,110 +55,19 @@ impl FramesOCR for MangaFramesOCR {
         let mut worker = self.worker.lock().map_err(|_| {
             RecognitionError::RecognitionFailed("Manga OCR worker lock is poisoned".to_owned())
         })?;
-        writeln!(worker.input, "{}", temporary_image.path.display()).map_err(|error| {
-            RecognitionError::RecognitionFailed(format!(
-                "failed to send frame to Manga OCR: {error}"
-            ))
-        })?;
-        worker.input.flush().map_err(|error| {
-            RecognitionError::RecognitionFailed(format!(
-                "failed to flush frame to Manga OCR: {error}"
-            ))
-        })?;
-        let mut response = String::new();
-        let bytes_read = worker.output.read_line(&mut response).map_err(|error| {
-            RecognitionError::RecognitionFailed(format!(
-                "failed to read Manga OCR response: {error}"
-            ))
-        })?;
-        if bytes_read == 0 {
-            return Err(RecognitionError::RecognitionFailed(
-                "Manga OCR worker stopped unexpectedly".to_owned(),
-            ));
-        }
+        worker
+            .send_line(&temporary_image.path.to_string_lossy())
+            .map_err(RecognitionError::RecognitionFailed)?;
+        let response = worker
+            .read_line()
+            .map_err(RecognitionError::RecognitionFailed)?
+            .ok_or_else(|| {
+                RecognitionError::RecognitionFailed(
+                    "Manga OCR worker stopped unexpectedly".to_owned(),
+                )
+            })?;
         parse_response(&response, frame)
     }
-}
-
-struct MangaOcrWorker {
-    process: Child,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
-}
-
-impl MangaOcrWorker {
-    fn spawn(python_executable: &Path, script_path: &Path) -> Result<Self, RecognitionError> {
-        let mut process = Command::new(python_executable)
-            .arg(script_path)
-            .env("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-            .env("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-            .env("TRANSFORMERS_VERBOSITY", "error")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| {
-                RecognitionError::RecognitionFailed(format!(
-                    "failed to start Manga OCR with {}: {error}",
-                    python_executable.display()
-                ))
-            })?;
-        let Some(input) = process.stdin.take() else {
-            stop_process(process);
-            return Err(RecognitionError::RecognitionFailed(
-                "Manga OCR stdin is unavailable".to_owned(),
-            ));
-        };
-        let Some(output) = process.stdout.take() else {
-            stop_process(process);
-            return Err(RecognitionError::RecognitionFailed(
-                "Manga OCR stdout is unavailable".to_owned(),
-            ));
-        };
-        let mut output = BufReader::new(output);
-        let mut readiness = String::new();
-        match output.read_line(&mut readiness) {
-            Ok(0) => {
-                stop_process(process);
-                return Err(RecognitionError::RecognitionFailed(
-                    "Manga OCR worker exited before becoming ready".to_owned(),
-                ));
-            }
-            Ok(_) if readiness.trim() == READY_RESPONSE => {}
-            Ok(_) => {
-                stop_process(process);
-                return Err(RecognitionError::RecognitionFailed(format!(
-                    "unexpected Manga OCR readiness response: {readiness:?}"
-                )));
-            }
-            Err(error) => {
-                stop_process(process);
-                return Err(RecognitionError::RecognitionFailed(format!(
-                    "failed to read Manga OCR readiness response: {error}"
-                )));
-            }
-        }
-        Ok(Self {
-            process,
-            input,
-            output,
-        })
-    }
-}
-
-impl Drop for MangaOcrWorker {
-    fn drop(&mut self) {
-        stop_process_ref(&mut self.process);
-    }
-}
-
-fn stop_process(mut process: Child) {
-    stop_process_ref(&mut process);
-}
-
-fn stop_process_ref(process: &mut Child) {
-    let _ = process.kill();
-    let _ = process.wait();
 }
 
 fn parse_response(response: &str, frame: &Frame) -> Result<Vec<TextRegion>, RecognitionError> {
@@ -210,10 +129,6 @@ impl Drop for TemporaryImage {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
     }
-}
-
-fn manifest_path(relative_path: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_path)
 }
 
 #[cfg(test)]
