@@ -7,22 +7,22 @@ use frames_translator::frame::Frame;
 use frames_translator::text_region::{Bounds, TextRegion, TranslatedText};
 use frames_translator::text_renderer::RenderingError;
 
+const FRAME_WIDTH: u32 = 16;
+const FRAME_HEIGHT: u32 = 16;
+const REGION_X: u32 = 4;
+const REGION_Y: u32 = 4;
+const REGION_WIDTH: u32 = 8;
+const REGION_HEIGHT: u32 = 8;
+const EXPECTED_COLOR: [u8; 4] = [255, 128, 0, 255];
+
 #[test]
 fn text_renderer_draws_translated_regions() -> Result<(), Box<dyn Error>> {
     let config = support::load_config()?;
-    let frame_width = config.require_u32("TEXT_RENDERER_TEST_FRAME_WIDTH")?;
-    let frame_height = config.require_u32("TEXT_RENDERER_TEST_FRAME_HEIGHT")?;
-    let bounds = Bounds::new(
-        config.require_u32("TEXT_RENDERER_TEST_REGION_X")?,
-        config.require_u32("TEXT_RENDERER_TEST_REGION_Y")?,
-        config.require_u32("TEXT_RENDERER_TEST_REGION_WIDTH")?,
-        config.require_u32("TEXT_RENDERER_TEST_REGION_HEIGHT")?,
-    );
-    let expected_color = config.require_color("TEXT_RENDERER_COLOR")?;
+    let bounds = Bounds::new(REGION_X, REGION_Y, REGION_WIDTH, REGION_HEIGHT);
     let frame = Frame::new(
-        frame_width,
-        frame_height,
-        vec![0; frame_width as usize * frame_height as usize * 4],
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        vec![0; FRAME_WIDTH as usize * FRAME_HEIGHT as usize * 4],
     )?;
     let translated_text = TranslatedText::new(
         TextRegion::new(bounds, "Shadowrun"),
@@ -33,10 +33,10 @@ fn text_renderer_draws_translated_regions() -> Result<(), Box<dyn Error>> {
     assert_eq!(rendered_frame.width(), frame.width());
     assert_eq!(rendered_frame.height(), frame.height());
     assert_eq!(&rendered_frame.rgba_pixels()[..4], &[0; 4]);
-    let region_offset = (bounds.y() as usize * frame_width as usize + bounds.x() as usize) * 4;
+    let region_offset = (REGION_Y as usize * FRAME_WIDTH as usize + REGION_X as usize) * 4;
     assert_eq!(
         &rendered_frame.rgba_pixels()[region_offset..region_offset + 4],
-        expected_color.as_slice()
+        EXPECTED_COLOR.as_slice()
     );
     assert_eq!(text_renderer.render(&frame, &[])?, frame);
     Ok(())

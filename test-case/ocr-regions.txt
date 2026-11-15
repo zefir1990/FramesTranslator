@@ -1,2 +1,0 @@
-10,8,40,12|Shadowrun
-10,28,40,12|Second Edition

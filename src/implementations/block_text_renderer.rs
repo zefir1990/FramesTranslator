@@ -1,18 +1,15 @@
-use crate::config::{Config, ConfigError};
 use crate::frame::{CHANNELS_PER_PIXEL, Frame};
 use crate::text_region::{Bounds, TranslatedText};
 use crate::text_renderer::{RenderingError, TextRenderer};
 
-#[derive(Debug, Clone, Copy)]
-pub struct BlockTextRenderer {
-    color: [u8; 4],
-}
+const COLOR: [u8; 4] = [255, 128, 0, 255];
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BlockTextRenderer;
 
 impl BlockTextRenderer {
-    pub fn from_config(config: &Config) -> Result<Self, ConfigError> {
-        Ok(Self {
-            color: config.require_color("TEXT_RENDERER_COLOR")?,
-        })
+    pub const fn new() -> Self {
+        Self
     }
 }
 
@@ -32,7 +29,7 @@ impl TextRenderer for BlockTextRenderer {
                     frame_height: frame.height(),
                 });
             }
-            fill_bounds(&mut rgba_pixels, frame.width(), bounds, self.color);
+            fill_bounds(&mut rgba_pixels, frame.width(), bounds, COLOR);
         }
         Frame::new(frame.width(), frame.height(), rgba_pixels)
             .map_err(|error| RenderingError::InvalidFrame(error.to_string()))

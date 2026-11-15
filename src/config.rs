@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    base_directory: PathBuf,
     values: HashMap<String, String>,
 }
 
@@ -18,15 +17,8 @@ impl Config {
             path: path.clone(),
             source,
         })?;
-        let base_directory = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or(Path::new("."))
-            .to_path_buf();
-        let values = parse_values(&path, &contents)?;
         Ok(Self {
-            base_directory,
-            values,
+            values: parse_values(&path, &contents)?,
         })
     }
 
@@ -38,39 +30,6 @@ impl Config {
                 key: key.to_owned(),
             })
     }
-
-    pub fn require_u32(&self, key: &str) -> Result<u32, ConfigError> {
-        let value = self.require(key)?;
-        value
-            .parse()
-            .map_err(|_| invalid_value(key, value, "an unsigned 32-bit integer"))
-    }
-
-    pub fn require_usize(&self, key: &str) -> Result<usize, ConfigError> {
-        let value = self.require(key)?;
-        value
-            .parse()
-            .map_err(|_| invalid_value(key, value, "an unsigned integer"))
-    }
-
-    pub fn require_color(&self, key: &str) -> Result<[u8; 4], ConfigError> {
-        let value = self.require(key)?;
-        let components: Vec<&str> = value.split(',').map(str::trim).collect();
-        let [red, green, blue, alpha] = components.as_slice() else {
-            return Err(invalid_value(key, value, "four comma-separated bytes"));
-        };
-        Ok([
-            parse_color_component(key, value, red)?,
-            parse_color_component(key, value, green)?,
-            parse_color_component(key, value, blue)?,
-            parse_color_component(key, value, alpha)?,
-        ])
-    }
-
-    pub fn resolve_path(&self, key: &str) -> Result<PathBuf, ConfigError> {
-        let value = self.require(key)?;
-        Ok(self.base_directory.join(value))
-    }
 }
 
 fn parse_values(path: &Path, contents: &str) -> Result<HashMap<String, String>, ConfigError> {
@@ -80,18 +39,17 @@ fn parse_values(path: &Path, contents: &str) -> Result<HashMap<String, String>, 
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let line_number = line_index + 1;
         let (key, value) = line
             .split_once('=')
             .ok_or_else(|| ConfigError::MalformedLine {
                 path: path.to_path_buf(),
-                line: line_number,
+                line: line_index + 1,
             })?;
         let key = key.trim();
         if key.is_empty() {
             return Err(ConfigError::MalformedLine {
                 path: path.to_path_buf(),
-                line: line_number,
+                line: line_index + 1,
             });
         }
         let value = value.trim().trim_matches(&['"', '\''][..]);
@@ -100,42 +58,11 @@ fn parse_values(path: &Path, contents: &str) -> Result<HashMap<String, String>, 
     Ok(values)
 }
 
-fn parse_color_component(key: &str, value: &str, component: &str) -> Result<u8, ConfigError> {
-    component
-        .parse()
-        .map_err(|_| invalid_value(key, value, "four comma-separated bytes"))
-}
-
-fn invalid_value(key: &str, value: &str, expected: &'static str) -> ConfigError {
-    ConfigError::InvalidValue {
-        key: key.to_owned(),
-        value: value.to_owned(),
-        expected,
-    }
-}
-
 #[derive(Debug)]
 pub enum ConfigError {
-    Io {
-        path: PathBuf,
-        source: io::Error,
-    },
-    MalformedLine {
-        path: PathBuf,
-        line: usize,
-    },
-    MalformedFileEntry {
-        path: PathBuf,
-        line: usize,
-    },
-    MissingKey {
-        key: String,
-    },
-    InvalidValue {
-        key: String,
-        value: String,
-        expected: &'static str,
-    },
+    Io { path: PathBuf, source: io::Error },
+    MalformedLine { path: PathBuf, line: usize },
+    MissingKey { key: String },
 }
 
 impl Display for ConfigError {
@@ -147,24 +74,9 @@ impl Display for ConfigError {
             Self::MalformedLine { path, line } => {
                 write!(formatter, "malformed line {line} in {}", path.display())
             }
-            Self::MalformedFileEntry { path, line } => {
-                write!(
-                    formatter,
-                    "malformed entry at line {line} in {}",
-                    path.display()
-                )
-            }
             Self::MissingKey { key } => {
                 write!(formatter, "required configuration key {key} is missing")
             }
-            Self::InvalidValue {
-                key,
-                value,
-                expected,
-            } => write!(
-                formatter,
-                "configuration key {key} has value {value:?}, expected {expected}"
-            ),
         }
     }
 }

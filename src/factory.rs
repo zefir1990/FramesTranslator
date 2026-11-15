@@ -12,7 +12,7 @@ use crate::text_translator::TextTranslator;
 
 pub fn create_frames_sourcer(config: &Config) -> Result<Box<dyn FramesSourcer>, FactoryError> {
     match config.require("FRAMES_SOURCER")? {
-        "synthetic" => Ok(Box::new(SyntheticFramesSourcer::from_config(config)?)),
+        "SyntheticFramesSourcer" => Ok(Box::new(SyntheticFramesSourcer::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "FRAMES_SOURCER",
             name: name.to_owned(),
@@ -22,7 +22,7 @@ pub fn create_frames_sourcer(config: &Config) -> Result<Box<dyn FramesSourcer>, 
 
 pub fn create_frames_ocr(config: &Config) -> Result<Box<dyn FramesOCR>, FactoryError> {
     match config.require("FRAMES_OCR")? {
-        "fixture" => Ok(Box::new(FixtureFramesOCR::from_config(config)?)),
+        "FixtureFramesOCR" => Ok(Box::new(FixtureFramesOCR::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "FRAMES_OCR",
             name: name.to_owned(),
@@ -32,7 +32,7 @@ pub fn create_frames_ocr(config: &Config) -> Result<Box<dyn FramesOCR>, FactoryE
 
 pub fn create_text_translator(config: &Config) -> Result<Box<dyn TextTranslator>, FactoryError> {
     match config.require("TEXT_TRANSLATOR")? {
-        "dictionary" => Ok(Box::new(DictionaryTextTranslator::from_config(config)?)),
+        "DictionaryTextTranslator" => Ok(Box::new(DictionaryTextTranslator::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "TEXT_TRANSLATOR",
             name: name.to_owned(),
@@ -42,7 +42,7 @@ pub fn create_text_translator(config: &Config) -> Result<Box<dyn TextTranslator>
 
 pub fn create_text_renderer(config: &Config) -> Result<Box<dyn TextRenderer>, FactoryError> {
     match config.require("TEXT_RENDERER")? {
-        "block" => Ok(Box::new(BlockTextRenderer::from_config(config)?)),
+        "BlockTextRenderer" => Ok(Box::new(BlockTextRenderer::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "TEXT_RENDERER",
             name: name.to_owned(),
