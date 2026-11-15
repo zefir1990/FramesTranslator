@@ -19,6 +19,15 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     );
     assert_eq!(application_config.text_renderer(), "BlockTextRenderer");
     let serialized = application_config.to_jsonc()?;
+    let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;
+    for key in [
+        "framesSourcer",
+        "framesOcr",
+        "textTranslator",
+        "textRenderer",
+    ] {
+        assert!(serialized_value.get(key).is_some());
+    }
     let restored = ApplicationConfig::from_jsonc(&serialized)?;
     assert_eq!(restored, application_config);
     Ok(())

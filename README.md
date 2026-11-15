@@ -33,7 +33,7 @@ Core models:
 
 | Interface | Concrete type | Behavior |
 | --- | --- | --- |
-| `FramesSourcer` | `ImageFramesSourcer` | Decodes `test-case/Shadowrun_02.png` into one RGBA frame. |
+| `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
 | `TextTranslator` | `DictionaryTextTranslator` | Translates text through a fixed dictionary. |
@@ -47,10 +47,10 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 ```jsonc
 {
-  "FRAMES_SOURCER": "ImageFramesSourcer",
-  "FRAMES_OCR": "FixtureFramesOCR",
-  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
-  "TEXT_RENDERER": "BlockTextRenderer"
+  "framesSourcer": "ImageFramesSourcer",
+  "framesOcr": "FixtureFramesOCR",
+  "textTranslator": "DictionaryTextTranslator",
+  "textRenderer": "BlockTextRenderer"
 }
 ```
 

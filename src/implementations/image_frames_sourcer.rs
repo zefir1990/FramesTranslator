@@ -1,33 +1,71 @@
+use std::collections::VecDeque;
 use std::path::Path;
 
+use image::RgbaImage;
+
 use crate::frame::Frame;
+use crate::frames_config::FramesConfig;
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 
 #[derive(Debug)]
 pub struct ImageFramesSourcer {
-    frame: Option<Frame>,
+    frames: VecDeque<Frame>,
 }
 
 impl ImageFramesSourcer {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, FrameSourceError> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        frames_config: &FramesConfig,
+    ) -> Result<Self, FrameSourceError> {
         let path = path.as_ref();
         let image = image::open(path).map_err(|error| {
             FrameSourceError::Decoding(format!("failed to decode {}: {error}", path.display()))
         })?;
         let rgba_image = image.to_rgba8();
-        let (width, height) = rgba_image.dimensions();
-        let frame_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        let frame = Frame::new(frame_name, width, height, rgba_image.into_raw())
-            .map_err(|error| FrameSourceError::Decoding(error.to_string()))?;
-        Ok(Self { frame: Some(frame) })
+        Ok(Self {
+            frames: extract_frames(&rgba_image, frames_config)?.into(),
+        })
     }
 }
 
 impl FramesSourcer for ImageFramesSourcer {
     fn next_frame(&mut self) -> Result<Option<Frame>, FrameSourceError> {
-        Ok(self.frame.take())
+        Ok(self.frames.pop_front())
     }
+}
+
+fn extract_frames(
+    image: &RgbaImage,
+    frames_config: &FramesConfig,
+) -> Result<Vec<Frame>, FrameSourceError> {
+    frames_config
+        .frames()
+        .iter()
+        .map(|named_rect| {
+            let bounds = named_rect.rect();
+            if bounds.right() > image.width() || bounds.bottom() > image.height() {
+                return Err(FrameSourceError::RegionOutOfBounds {
+                    name: named_rect.name().to_owned(),
+                    bounds,
+                    image_width: image.width(),
+                    image_height: image.height(),
+                });
+            }
+            let cropped_image = image::imageops::crop_imm(
+                image,
+                bounds.x(),
+                bounds.y(),
+                bounds.width(),
+                bounds.height(),
+            )
+            .to_image();
+            Frame::new(
+                named_rect.name(),
+                cropped_image.width(),
+                cropped_image.height(),
+                cropped_image.into_raw(),
+            )
+            .map_err(|error| FrameSourceError::Decoding(error.to_string()))
+        })
+        .collect()
 }

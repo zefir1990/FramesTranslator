@@ -54,16 +54,16 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 
 ```jsonc
 {
-  "FRAMES_SOURCER": "ImageFramesSourcer",
-  "FRAMES_OCR": "FixtureFramesOCR",
-  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
-  "TEXT_RENDERER": "BlockTextRenderer"
+  "framesSourcer": "ImageFramesSourcer",
+  "framesOcr": "FixtureFramesOCR",
+  "textTranslator": "DictionaryTextTranslator",
+  "textRenderer": "BlockTextRenderer"
 }
 ```
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
-`ImageFramesSourcer` uses `test-case/Shadowrun_02.png` when constructed through the factory. Its public `open(path)` constructor accepts an explicit path.
+`ImageFramesSourcer` uses `test-case/Shadowrun_02.png` and extracts the named frames defined in `test-case/tests-config.jsonc` when constructed through the factory. Its public `open(path, frames_config)` constructor accepts explicit paths and frame definitions.
 
 `ApplicationConfig` is deserialized with `ApplicationConfig::from_jsonc` and serialized with `ApplicationConfig::to_jsonc`. JSONC comments are supported through `json5`.
 
@@ -73,7 +73,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 
 | Type | Behavior |
 | --- | --- |
-| `ImageFramesSourcer` | Decodes one PNG to RGBA and yields one frame |
+| `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
@@ -91,7 +91,7 @@ Integration tests are in `tests/`:
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
-The sample image is `320x224`. Tests assert PNG decoding, frame exhaustion, exact OCR regions, batch translation, rendering output, and out-of-bounds rejection.
+The sample image is `320x224`, and the configured `"Actions Menu"` frame is `91x68` at `(18, 86)`. Tests assert PNG decoding, configured frame extraction and crop pixels, frame exhaustion, exact OCR regions, batch translation, rendering output, and out-of-bounds rejection.
 
 When adding an implementation:
 

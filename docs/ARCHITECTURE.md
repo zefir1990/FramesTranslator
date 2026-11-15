@@ -126,25 +126,25 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 ```jsonc
 {
-  "FRAMES_SOURCER": "ImageFramesSourcer",
-  "FRAMES_OCR": "FixtureFramesOCR",
-  "TEXT_TRANSLATOR": "DictionaryTextTranslator",
-  "TEXT_RENDERER": "BlockTextRenderer"
+  "framesSourcer": "ImageFramesSourcer",
+  "framesOcr": "FixtureFramesOCR",
+  "textTranslator": "DictionaryTextTranslator",
+  "textRenderer": "BlockTextRenderer"
 }
 ```
 
-`ApplicationConfig` uses Serde with screaming snake case field names, matching the original environment keys. `ApplicationConfig::from_jsonc` parses JSONC through `json5`; `ApplicationConfig::to_jsonc` emits pretty JSON through `serde_json`.
+`ApplicationConfig` uses Serde with camelCase field names. `ApplicationConfig::from_jsonc` parses JSONC through `json5`; `ApplicationConfig::to_jsonc` emits pretty JSON through `serde_json`.
 
 `src/factory.rs` is the composition root. Each factory function reads one implementation name from `ApplicationConfig` and constructs the matching implementation:
 
 | Factory function | Configuration getter | Configuration key |
 | --- | --- | --- |
-| `create_frames_sourcer` | `frames_sourcer()` | `FRAMES_SOURCER` |
-| `create_frames_ocr` | `frames_ocr()` | `FRAMES_OCR` |
-| `create_text_translator` | `text_translator()` | `TEXT_TRANSLATOR` |
-| `create_text_renderer` | `text_renderer()` | `TEXT_RENDERER` |
+| `create_frames_sourcer` | `frames_sourcer()` | `framesSourcer` |
+| `create_frames_ocr` | `frames_ocr()` | `framesOcr` |
+| `create_text_translator` | `text_translator()` | `textTranslator` |
+| `create_text_renderer` | `text_renderer()` | `textRenderer` |
 
-`ImageFramesSourcer` uses the fixed file `test-case/Shadowrun_02.png` when created through the factory. The constructor `ImageFramesSourcer::open(path)` remains available for explicit paths. Because the application configuration is restricted to class names, backend-specific settings are currently constants inside implementations rather than configuration values.
+`ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions. Because the application configuration is restricted to class names, backend-specific settings are currently constants inside implementations rather than configuration values.
 
 ### Configuration serialization
 
@@ -169,7 +169,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 | Type | Contract | Behavior | Limitations |
 | --- | --- | --- | --- |
-| `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG to RGBA at construction and yields one frame | Single image, no video or directory input |
+| `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG and extracts the named frame rectangles from `TestsConfig` | Single image, no video or directory input |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
@@ -184,11 +184,11 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | Error | Variants |
 | --- | --- |
 | `FrameError` | `DimensionsOverflow`, `PixelBufferSizeMismatch` |
-| `FrameSourceError` | `Io`, `Decoding` |
+| `FrameSourceError` | `Io`, `Decoding`, `RegionOutOfBounds` |
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame` |
-| `FactoryError` | `FrameSource`, `UnknownImplementation` |
+| `FactoryError` | `FrameSource`, `Io`, `TestsConfig`, `UnknownImplementation` |
 
 Errors are propagated with `?`. `FactoryError` preserves source errors where a dedicated variant exists. No stage panics on malformed external input; invalid dimensions, missing configuration, unknown class names, and out-of-bounds rendering are represented as errors.
 
@@ -203,7 +203,7 @@ Integration tests live in `tests/`:
 
 Coverage includes:
 
-- PNG decoding, dimensions, RGBA buffer size, and non-empty pixel data,
+- PNG decoding, configured frame extraction, crop dimensions and pixel fidelity,
 - source termination,
 - exact OCR regions and frame containment,
 - single and batch translation,
