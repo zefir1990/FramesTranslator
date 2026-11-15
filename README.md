@@ -64,6 +64,21 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 
 Test-case expectations are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. It contains a `shadowrun_cd` case for the menu panels, a `shadowrun_dialog` case for the intro dialog box, and a `shadowrun_street` case for the Shibuya street dialog box. Each case lists the expected detected frames with their positions and dimensions, and `expectedResultOCR` and `expectedTranslationResult` dictionaries keyed by the expected frame names, so each detected frame is validated against its own OCR lines and translations. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
+## Interactive application
+
+The `FramesTranslator` executable opens an SDL3 window that accepts image files by drag and drop. After a file is dropped, it:
+
+1. Loads the image.
+2. Detects text frames using the configured background and text color arrays.
+3. Recognizes and translates each detected frame.
+4. Replaces each frame in place with its translations.
+
+Drop another image to process it again; press `Escape` or close the window to exit. A file path may also be passed as the first command-line argument to open an image immediately:
+
+```powershell
+cargo run -- test-case/Shadowrun_03.png
+```
+
 ## Library usage
 
 ```rust
@@ -107,6 +122,8 @@ src/
   frames_config.rs             Named frame rectangles
   frames_ocr.rs                OCR trait and error
   frames_sourcer.rs            Frame source trait and error
+  main.rs                      Drag-and-drop SDL application entry point
+  sdl_image_translator.rs      Interactive SDL window and in-place overlays
   tests_config.rs              Per-test configuration structs
   text_region.rs               Bounds, TextRegion, TranslatedText
   text_renderer.rs             Renderer trait and error
@@ -141,6 +158,7 @@ third-party/
 ```powershell
 cargo build
 cargo run
+cargo run -- test-case/Shadowrun_03.png
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
@@ -150,7 +168,7 @@ The test suite covers image decoding, color-based detection of both Shadowrun CD
 
 ## Status
 
-The pipeline interfaces, configuration, factory, tests, and SDL3 preview flow are in place. Run `cargo run` to process the configured Shadowrun CD frame and display the translated result; the window closes after the configured timeout or when the user closes it.
+The pipeline interfaces, configuration, factory, tests, and interactive SDL3 application are in place. Run `cargo run` and drop an image into the window, or pass an image path to translate it immediately. The configured timeout-based SDL preview remains available for the automated pipeline tests.
 
 ## License
 

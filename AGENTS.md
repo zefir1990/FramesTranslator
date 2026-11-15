@@ -47,7 +47,9 @@ Supporting modules:
 - `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
-- `src/implementations/frames_detector_sourcer.rs`: background-color and text-color frame detection.
+- `src/main.rs`: interactive SDL application that processes dropped images.
+- `src/sdl_image_translator.rs`: drag-and-drop event loop and in-place translation overlays.
+- `src/implementations/frames_detector_sourcer.rs`: background-color and text-color frame detection with public bounds via `DetectedFrame`.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
 - `build.rs`: copies the vendored SDL3 DLL into target directories.
@@ -144,7 +146,8 @@ When adding an implementation:
 
 - `FramesDetectorSourcer` matches background and text colors exactly and uses fixed minimum size and density thresholds.
 - OCR and translation use local Python models with model-dependent quality.
-- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
+- The application processes each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
 - PNG only.
 - Synchronous, single-threaded processing.
 - All frames are processed fully in memory.

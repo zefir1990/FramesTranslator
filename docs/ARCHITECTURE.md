@@ -51,7 +51,8 @@ flowchart LR
 | `src/factory.rs` | Class-name based composition and `FactoryError` |
 | `src/implementations/` | Concrete backends for the four contracts |
 | `src/lib.rs` | Public module and re-export surface |
-| `src/main.rs` | Binary entry point that runs the configured pipeline |
+| `src/main.rs` | Binary entry point for the interactive drag-and-drop application |
+| `src/sdl_image_translator.rs` | SDL3 window, drop-event loop, and in-place translation overlays |
 
 ## Domain models
 
@@ -216,6 +217,20 @@ Because the application configuration remains focused on implementation selectio
 }
 ```
 
+## Interactive application
+
+`src/main.rs` loads `ApplicationConfig`, creates the configured OCR and translation backends, and passes them to `sdl_image_translator::run`. The SDL window starts in an empty state that prompts for a dropped image. An image path may also be supplied as the first command-line argument.
+
+For each `Event::DropFile`, the application:
+
+1. Decodes the dropped image into an RGBA image.
+2. Calls `FramesDetectorSourcer::detect`, which returns `DetectedFrame` values with both the cropped frame and its original bounds.
+3. Runs `FramesOCR::recognize` and `TextTranslator::translate_all` for each detected frame.
+4. Copies the source image to an SDL texture, blacks out each detected frame at its bounds, and draws the translated lines at the corresponding region offsets.
+5. Presents the result and waits for another drop, `Escape`, or window close.
+
+The display scale is chosen to fit `1280x900` while preserving aspect ratio, capped at `4`. `DetectedFrame` exposes the bounds needed for in-place placement; the `FramesSourcer` contract still yields only frames for pipeline callers.
+
 ## Concrete implementations
 
 | Type | Contract | Behavior | Limitations |
@@ -323,9 +338,9 @@ The current contracts are synchronous and single-threaded. This keeps the pipeli
 
 Each stage has an error type specific to its failure modes. A shared pipeline error would reduce type precision and make backend-specific failures harder to distinguish.
 
-### Class names only in application configuration
+### Class names and detector colors in application configuration
 
-Configuration is limited to selecting implementations. This keeps configuration files stable and free of secrets or backend-specific options. The tradeoff is that concrete backends currently need constructor defaults for settings such as file paths, colors, and fixture data.
+Configuration selects implementations and supplies the two detector color arrays. This keeps configuration files stable and free of secrets while allowing the same detection rules to apply to dropped images. Other backend settings remain constructor defaults or private constants.
 
 ## Extension guide
 
@@ -348,9 +363,10 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 
 ## Current limitations
 
-- `src/main.rs` runs the configured source, OCR, translation, and rendering pipeline.
+- `src/main.rs` runs an interactive SDL application; automated pipeline tests use `SdlThreeTextRenderer` directly.
 - OCR and translation use local Python models with model-dependent quality.
-- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
+- The interactive application blocks its event loop while processing a dropped image.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus `FramesDetectorSourcer` colors.

@@ -50,6 +50,23 @@ fn frames_detector_sourcer_detects_shadowrun_street_dialog_frame() -> Result<(),
 }
 
 #[test]
+fn detect_reports_frame_bounds_for_drag_and_drop() -> Result<(), Box<dyn Error>> {
+    let application_config = support::load_application_config()?;
+    let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SHADOWRUN_STREET_IMAGE_PATH);
+    let image = image::open(image_path)?.to_rgba8();
+    let detected_frames = FramesDetectorSourcer::detect(
+        &image,
+        application_config.frames_detection_background_colors(),
+        application_config.frames_detection_text_colors(),
+    )?;
+    assert_eq!(detected_frames.len(), 1);
+    assert_eq!(detected_frames[0].bounds(), Bounds::new(26, 158, 267, 52));
+    assert_eq!(detected_frames[0].frame().width(), 267);
+    assert_eq!(detected_frames[0].frame().height(), 52);
+    Ok(())
+}
+
+#[test]
 fn factory_creates_frames_detector_sourcer_from_application_config() -> Result<(), Box<dyn Error>> {
     let application_config = ApplicationConfig::new(
         "FramesDetectorSourcer",

@@ -28,21 +28,54 @@ impl FramesDetectorSourcer {
         background_colors: &[u32],
         text_colors: &[u32],
     ) -> Result<Self, FrameSourceError> {
-        let background_colors = RgbColorSet::from_rgb_values("background", background_colors)?;
-        let text_colors = RgbColorSet::from_rgb_values("text", text_colors)?;
         let path = path.as_ref();
         let image = image::open(path).map_err(|error| {
             FrameSourceError::Decoding(format!("failed to decode {}: {error}", path.display()))
         })?;
-        let rgba_image = image.to_rgba8();
-        let frames = detect_frame_bounds(&rgba_image, &background_colors, &text_colors)
+        let frames: Vec<Frame> = Self::detect(&image.to_rgba8(), background_colors, text_colors)?
             .into_iter()
-            .enumerate()
-            .map(|(index, bounds)| extract_frame(&rgba_image, bounds, index + 1))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(DetectedFrame::into_frame)
+            .collect();
         Ok(Self {
             frames: frames.into(),
         })
+    }
+
+    pub fn detect(
+        image: &RgbaImage,
+        background_colors: &[u32],
+        text_colors: &[u32],
+    ) -> Result<Vec<DetectedFrame>, FrameSourceError> {
+        let background_colors = RgbColorSet::from_rgb_values("background", background_colors)?;
+        let text_colors = RgbColorSet::from_rgb_values("text", text_colors)?;
+        detect_frame_bounds(image, &background_colors, &text_colors)
+            .into_iter()
+            .enumerate()
+            .map(|(index, bounds)| {
+                let frame = extract_frame(image, bounds, index + 1)?;
+                Ok(DetectedFrame { bounds, frame })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedFrame {
+    bounds: Bounds,
+    frame: Frame,
+}
+
+impl DetectedFrame {
+    pub const fn bounds(&self) -> Bounds {
+        self.bounds
+    }
+
+    pub fn frame(&self) -> &Frame {
+        &self.frame
+    }
+
+    fn into_frame(self) -> Frame {
+        self.frame
     }
 }
 
