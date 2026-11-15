@@ -12,9 +12,9 @@ use sdl3::video::Window;
 
 use frames_translator::application_config::ApplicationConfig;
 use frames_translator::frame_translation::translate_frame_regions;
+use frames_translator::frames_detector_sourcer::FramesDetectorSourcer;
 use frames_translator::frames_ocr::{FramesOCR, RecognitionError};
 use frames_translator::frames_sourcer::FrameSourceError;
-use frames_translator::implementations::FramesDetectorSourcer;
 use frames_translator::text_region::{Bounds, TranslatedText};
 use frames_translator::text_translator::{TextTranslator, TranslationError};
 
@@ -32,6 +32,7 @@ const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
 
 pub fn run(
     application_config: &ApplicationConfig,
+    frames_detector: &dyn FramesDetectorSourcer,
     frames_ocr: &dyn FramesOCR,
     text_translator: &mut dyn TextTranslator,
     initial_image: Option<&str>,
@@ -48,7 +49,7 @@ pub fn run(
     let mut event_pump = sdl_context.event_pump().map_err(sdl_error)?;
     let mut scene = None;
     if let Some(image_path) = initial_image {
-        let loaded_scene = load_scene(image_path, application_config, frames_ocr, text_translator)?;
+        let loaded_scene = load_scene(image_path, frames_detector, frames_ocr, text_translator)?;
         canvas
             .window_mut()
             .set_title(&format!("{WINDOW_TITLE} - {image_path}"))
@@ -76,7 +77,7 @@ pub fn run(
                         .window_mut()
                         .set_title(&format!("{WINDOW_TITLE} - loading {filename}"))
                         .map_err(sdl_error)?;
-                    match load_scene(&filename, application_config, frames_ocr, text_translator) {
+                    match load_scene(&filename, frames_detector, frames_ocr, text_translator) {
                         Ok(loaded_scene) => {
                             canvas
                                 .window_mut()
@@ -130,16 +131,12 @@ struct FrameOverlay {
 
 fn load_scene(
     image_path: &str,
-    application_config: &ApplicationConfig,
+    frames_detector: &dyn FramesDetectorSourcer,
     frames_ocr: &dyn FramesOCR,
     text_translator: &mut dyn TextTranslator,
 ) -> Result<Scene, ApplicationError> {
     let image = image::open(image_path)?.to_rgba8();
-    let detected_frames = FramesDetectorSourcer::detect(
-        &image,
-        application_config.frames_detection_background_colors(),
-        application_config.frames_detection_text_colors(),
-    )?;
+    let detected_frames = frames_detector.detect(&image)?;
     let mut overlays = Vec::with_capacity(detected_frames.len());
     for detected_frame in detected_frames {
         let regions = frames_ocr.recognize(detected_frame.frame())?;

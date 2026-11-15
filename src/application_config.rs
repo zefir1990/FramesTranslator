@@ -112,7 +112,7 @@ mod tests {
     fn verbose_mode_defaults_to_true_when_missing() {
         let application_config = ApplicationConfig::from_jsonc(
             r#"{
-                "framesSourcer": "FramesDetectorSourcer",
+                "framesSourcer": "ProceduralFramesDetectorSourcer",
                 "framesOcr": "MangaFramesOCR",
                 "textTranslator": "ArgosTextTranslator",
                 "textRenderer": "SdlThreeTextRenderer",

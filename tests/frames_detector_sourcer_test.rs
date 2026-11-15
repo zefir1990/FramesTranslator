@@ -5,8 +5,9 @@ use std::path::PathBuf;
 
 use frames_translator::application_config::ApplicationConfig;
 use frames_translator::factory::create_frames_sourcer;
+use frames_translator::frames_detector_sourcer::FramesDetectorSourcer;
 use frames_translator::frames_sourcer::FramesSourcer;
-use frames_translator::implementations::FramesDetectorSourcer;
+use frames_translator::implementations::ProceduralFramesDetectorSourcer;
 use frames_translator::text_region::Bounds;
 
 const SHADOWRUN_CD_IMAGE_PATH: &str = "test-case/Shadowrun_02.png";
@@ -66,11 +67,11 @@ fn detect_reports_frame_bounds_for_drag_and_drop() -> Result<(), Box<dyn Error>>
     let application_config = support::load_application_config()?;
     let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SHADOWRUN_STREET_IMAGE_PATH);
     let image = image::open(image_path)?.to_rgba8();
-    let detected_frames = FramesDetectorSourcer::detect(
-        &image,
+    let frames_detector = ProceduralFramesDetectorSourcer::new(
         application_config.frames_detection_background_colors(),
         application_config.frames_detection_text_colors(),
     )?;
+    let detected_frames = frames_detector.detect(&image)?;
     assert_eq!(detected_frames.len(), 1);
     assert_eq!(detected_frames[0].bounds(), Bounds::new(26, 158, 267, 52));
     assert_eq!(detected_frames[0].frame().width(), 267);
@@ -81,7 +82,7 @@ fn detect_reports_frame_bounds_for_drag_and_drop() -> Result<(), Box<dyn Error>>
 #[test]
 fn factory_creates_frames_detector_sourcer_from_application_config() -> Result<(), Box<dyn Error>> {
     let application_config = ApplicationConfig::new(
-        "FramesDetectorSourcer",
+        "NeuralNetworkFramesDetectorSourcer",
         "MangaFramesOCR",
         "ArgosTextTranslator",
         "SdlThreeTextRenderer",
@@ -104,7 +105,7 @@ fn assert_detected_frames(
     expected_bounds: &[Bounds],
 ) -> Result<(), Box<dyn Error>> {
     let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(image_relative_path);
-    let mut frames_sourcer = FramesDetectorSourcer::open(
+    let mut frames_sourcer = ProceduralFramesDetectorSourcer::open(
         &image_path,
         application_config.frames_detection_background_colors(),
         application_config.frames_detection_text_colors(),

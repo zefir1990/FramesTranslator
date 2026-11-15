@@ -1,12 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::frame::{CHANNELS_PER_PIXEL, Frame};
 use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::text_region::{Bounds, TextRegion};
 
-use super::python_worker::{PythonWorker, manifest_path};
+use super::python_worker::{PythonWorker, TemporaryImage, manifest_path};
 
 const PYTHON_EXECUTABLE_PATH: &str = ".venv/Scripts/python.exe";
 const OCR_SCRIPT_PATH: &str = "scripts/manga_ocr_worker.py";
@@ -15,8 +14,6 @@ const INK_LUMINANCE_THRESHOLD: u32 = 160;
 const LINE_VERTICAL_PADDING: u32 = 1;
 const LINE_HORIZONTAL_PADDING: u32 = 8;
 const MINIMUM_LINE_HEIGHT: u32 = 4;
-
-static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct MangaFramesOCR {
     worker: Mutex<PythonWorker>,
@@ -63,7 +60,7 @@ impl FramesOCR for MangaFramesOCR {
             let line_frame = crop_frame(frame, bounds)?;
             let temporary_image = save_frame(&line_frame)?;
             worker
-                .send_line(&temporary_image.path.to_string_lossy())
+                .send_line(&temporary_image.path().to_string_lossy())
                 .map_err(RecognitionError::RecognitionFailed)?;
             let response = worker
                 .read_line()
@@ -187,7 +184,7 @@ fn parse_response_text(response: &str) -> Result<Option<String>, RecognitionErro
 fn save_frame(frame: &Frame) -> Result<TemporaryImage, RecognitionError> {
     let temporary_image = TemporaryImage::new();
     image::save_buffer_with_format(
-        &temporary_image.path,
+        temporary_image.path(),
         frame.rgba_pixels(),
         frame.width(),
         frame.height(),
@@ -200,30 +197,6 @@ fn save_frame(frame: &Frame) -> Result<TemporaryImage, RecognitionError> {
         ))
     })?;
     Ok(temporary_image)
-}
-
-struct TemporaryImage {
-    path: PathBuf,
-}
-
-impl TemporaryImage {
-    fn new() -> Self {
-        let file_counter = TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let file_name = format!(
-            "frames_translator_{}_{}.png",
-            std::process::id(),
-            file_counter
-        );
-        Self {
-            path: std::env::temp_dir().join(file_name),
-        }
-    }
-}
-
-impl Drop for TemporaryImage {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
 }
 
 #[cfg(test)]

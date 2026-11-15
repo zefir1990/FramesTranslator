@@ -11,6 +11,7 @@ FramesTranslator is a Rust image translation pipeline. The current codebase defi
 - Library target: `frames_translator`
 - Dependency: `image` with only the `png` feature enabled
 - Serialization: `serde`, `serde_json`, and `json5`
+- Frame detection backend: PyTorch in `.venv` with `scripts/neural_frame_detector_worker.py`
 - OCR backend: `manga-ocr` in `.venv` with Python 3.13 and `scripts/manga_ocr_worker.py`
 - Translation backend: `argostranslate` in `.venv` with Japanese packages and `scripts/argos_translate_worker.py`
 - Windowing: `sdl3` with vendored SDL3 3.4.20 under `third-party/sdl3`
@@ -50,7 +51,9 @@ Supporting modules:
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
 - `src/main.rs`: interactive SDL application that processes dropped images.
 - `src/sdl_image_translator.rs`: drag-and-drop event loop and in-place translation overlays.
-- `src/implementations/frames_detector_sourcer.rs`: background-color and text-color frame detection with public bounds via `DetectedFrame`.
+- `src/frames_detector_sourcer.rs`: abstract `FramesDetectorSourcer` trait and `DetectedFrame`.
+- `src/implementations/procedural_frames_detector_sourcer.rs`: background-color and text-color frame detection.
+- `src/implementations/neural_network_frames_detector_sourcer.rs`: local PyTorch frame detector adapter.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
 - `build.rs`: copies the vendored SDL3 DLL into target directories.
@@ -65,7 +68,7 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 
 ```jsonc
 {
-  "framesSourcer": "FramesDetectorSourcer",
+  "framesSourcer": "NeuralNetworkFramesDetectorSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
   "textRenderer": "SdlThreeTextRenderer",
@@ -75,11 +78,11 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 }
 ```
 
-`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by `FramesDetectorSourcer`, which is the selected source. A pixel matches when its channels are within a small tolerance of any configured color in the respective array, which handles anti-aliased text from scaled screenshots. `verboseMode` defaults to `true`; when enabled, the interactive application prints the detected frame count in green at the top-left corner. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
+`framesDetectionBackgroundColors` and `framesDetectionTextColors` are arrays of 24-bit RGB values used by both frame detector implementations. `FramesDetectorSourcer` is the abstract detector contract. A pixel matches when its channels are within a small tolerance of any configured color in the respective array, which handles anti-aliased text from scaled screenshots. `verboseMode` defaults to `true`; when enabled, the interactive application prints the detected frame count in green at the top-left corner. The expected detected frames and their dimensions are listed in `tests-config.jsonc`.
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
-`FramesDetectorSourcer` uses `test-case/Shadowrun_02.png` and the two detection colors when constructed through the factory. It detects the two menu panels in reading order and names them `Detected Frame 1` and `Detected Frame 2`.
+The selected detector uses `test-case/Shadowrun_02.png` and the two detection color arrays when constructed through `create_frames_sourcer`. `ProceduralFramesDetectorSourcer` matches background and text colors with fixed tolerances. `NeuralNetworkFramesDetectorSourcer` starts `.venv/Scripts/python.exe scripts/neural_frame_detector_worker.py`, trains a small PyTorch pixel classifier on synthetic colors, and returns frame bounds from connected components. Both detect the two menu panels in reading order and name them `Detected Frame 1` and `Detected Frame 2`.
 
 `ImageFramesSourcer` remains available and extracts the named frames defined in `test-case/tests-config.jsonc` when selected. Its public `open(path, frames_config)` constructor accepts explicit paths and frame definitions.
 
@@ -92,7 +95,8 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | Type | Behavior |
 | --- | --- |
 | `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
-| `FramesDetectorSourcer` | Detects connected background-color regions containing text-color pixels and extracts each as a frame |
+| `ProceduralFramesDetectorSourcer` | Detects connected background-color regions containing text-color pixels with fixed tolerances |
+| `NeuralNetworkFramesDetectorSourcer` | Trains a local PyTorch pixel classifier and detects frames from its background/text masks |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
 | `MangaFramesOCR` | Splits frames into text lines with horizontal ink padding and runs Manga OCR per line through a persistent Python worker in `.venv` |
@@ -108,7 +112,8 @@ These are development and test backends, not production implementations.
 Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
-- `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels and the intro, street, and hospital dialog boxes with `FramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
+- `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels and the intro, street, and hospital dialog boxes with `ProceduralFramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
+- `tests/neural_network_frames_detector_sourcer_test.rs` verifies that `NeuralNetworkFramesDetectorSourcer` finds the expected bounds in all four sample images.
 - `tests/frames_ocr_test.rs` detects both Shadowrun CD frames through the source factory, recognizes four text lines per frame through `MangaFramesOCR`, and asserts the exact line texts keyed by expected frame name.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
 - `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline for both detected frames and requires four recognized and translated lines per frame. The SDL window closes after `timeoutSeconds`.
@@ -147,7 +152,8 @@ When adding an implementation:
 
 ## Current limitations
 
-- `FramesDetectorSourcer` matches background and text colors within fixed channel tolerances and uses fixed minimum size and density thresholds.
+- `ProceduralFramesDetectorSourcer` matches background and text colors within fixed channel tolerances and uses fixed minimum size and density thresholds.
+- `NeuralNetworkFramesDetectorSourcer` retrains a small PyTorch classifier when each worker starts.
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's ASCII debug font.
 - The application processes each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.

@@ -1,9 +1,12 @@
-use std::collections::VecDeque;
 use std::path::Path;
 
 use image::RgbaImage;
 
 use crate::frame::Frame;
+use crate::frames_detector_sourcer::{
+    DetectedFrame, DetectedFrameQueue, FramesDetectorSourcer, decode_image,
+    detected_frames_from_bounds, validate_colors,
+};
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::text_region::Bounds;
 
@@ -13,77 +16,67 @@ const MINIMUM_TEXT_PIXEL_COUNT: usize = 16;
 const MINIMUM_BACKGROUND_SHARE_PERCENT: u64 = 50;
 const BACKGROUND_COLOR_TOLERANCE: u8 = 8;
 const TEXT_COLOR_TOLERANCE: u8 = 32;
-const MAXIMUM_RGB_VALUE: u32 = 0xFF_FFFF;
 const RED_SHIFT: u32 = 16;
 const GREEN_SHIFT: u32 = 8;
 const COLOR_CHANNEL_MASK: u32 = 0xFF;
-const FRAME_NAME_PREFIX: &str = "Detected Frame";
 
-#[derive(Debug)]
-pub struct FramesDetectorSourcer {
-    frames: VecDeque<Frame>,
+pub struct ProceduralFramesDetectorSourcer {
+    frames: DetectedFrameQueue,
+    settings: PixelDetectionSettings,
 }
 
-impl FramesDetectorSourcer {
+impl ProceduralFramesDetectorSourcer {
+    pub fn new(background_colors: &[u32], text_colors: &[u32]) -> Result<Self, FrameSourceError> {
+        Ok(Self {
+            frames: DetectedFrameQueue::default(),
+            settings: PixelDetectionSettings::new(background_colors, text_colors)?,
+        })
+    }
+
     pub fn open(
         path: impl AsRef<Path>,
         background_colors: &[u32],
         text_colors: &[u32],
     ) -> Result<Self, FrameSourceError> {
-        let path = path.as_ref();
-        let image = image::open(path).map_err(|error| {
-            FrameSourceError::Decoding(format!("failed to decode {}: {error}", path.display()))
-        })?;
-        let frames: Vec<Frame> = Self::detect(&image.to_rgba8(), background_colors, text_colors)?
-            .into_iter()
-            .map(DetectedFrame::into_frame)
-            .collect();
-        Ok(Self {
-            frames: frames.into(),
-        })
-    }
-
-    pub fn detect(
-        image: &RgbaImage,
-        background_colors: &[u32],
-        text_colors: &[u32],
-    ) -> Result<Vec<DetectedFrame>, FrameSourceError> {
-        let background_colors = RgbColorSet::from_rgb_values("background", background_colors)?;
-        let text_colors = RgbColorSet::from_rgb_values("text", text_colors)?;
-        detect_frame_bounds(image, &background_colors, &text_colors)
-            .into_iter()
-            .enumerate()
-            .map(|(index, bounds)| {
-                let frame = extract_frame(image, bounds, index + 1)?;
-                Ok(DetectedFrame { bounds, frame })
-            })
-            .collect()
+        let image = decode_image(path.as_ref())?;
+        let mut sourcer = Self::new(background_colors, text_colors)?;
+        let detected_frames = sourcer.detect(&image)?;
+        sourcer.frames = DetectedFrameQueue::from_detected_frames(detected_frames);
+        Ok(sourcer)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DetectedFrame {
-    bounds: Bounds,
-    frame: Frame,
-}
-
-impl DetectedFrame {
-    pub const fn bounds(&self) -> Bounds {
-        self.bounds
-    }
-
-    pub fn frame(&self) -> &Frame {
-        &self.frame
-    }
-
-    fn into_frame(self) -> Frame {
-        self.frame
-    }
-}
-
-impl FramesSourcer for FramesDetectorSourcer {
+impl FramesSourcer for ProceduralFramesDetectorSourcer {
     fn next_frame(&mut self) -> Result<Option<Frame>, FrameSourceError> {
-        Ok(self.frames.pop_front())
+        self.frames.next_frame()
+    }
+}
+
+impl FramesDetectorSourcer for ProceduralFramesDetectorSourcer {
+    fn detect(&self, image: &RgbaImage) -> Result<Vec<DetectedFrame>, FrameSourceError> {
+        let detected_bounds = detect_frame_bounds(
+            image,
+            &self.settings.background_colors,
+            &self.settings.text_colors,
+        );
+        detected_frames_from_bounds(image, detected_bounds)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PixelDetectionSettings {
+    background_colors: RgbColorSet,
+    text_colors: RgbColorSet,
+}
+
+impl PixelDetectionSettings {
+    fn new(background_colors: &[u32], text_colors: &[u32]) -> Result<Self, FrameSourceError> {
+        validate_colors("background", background_colors)?;
+        validate_colors("text", text_colors)?;
+        Ok(Self {
+            background_colors: RgbColorSet::from_rgb_values(background_colors),
+            text_colors: RgbColorSet::from_rgb_values(text_colors),
+        })
     }
 }
 
@@ -95,15 +88,12 @@ struct RgbColor {
 }
 
 impl RgbColor {
-    fn from_rgb_value(name: &'static str, value: u32) -> Result<Self, FrameSourceError> {
-        if value > MAXIMUM_RGB_VALUE {
-            return Err(FrameSourceError::InvalidColor { name, value });
-        }
-        Ok(Self {
+    fn from_rgb_value(value: u32) -> Self {
+        Self {
             red: ((value >> RED_SHIFT) & COLOR_CHANNEL_MASK) as u8,
             green: ((value >> GREEN_SHIFT) & COLOR_CHANNEL_MASK) as u8,
             blue: (value & COLOR_CHANNEL_MASK) as u8,
-        })
+        }
     }
 
     fn matches_within(self, pixel: [u8; 4], tolerance: u8) -> bool {
@@ -119,13 +109,14 @@ struct RgbColorSet {
 }
 
 impl RgbColorSet {
-    fn from_rgb_values(name: &'static str, values: &[u32]) -> Result<Self, FrameSourceError> {
-        let colors = values
-            .iter()
-            .copied()
-            .map(|value| RgbColor::from_rgb_value(name, value))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { colors })
+    fn from_rgb_values(values: &[u32]) -> Self {
+        Self {
+            colors: values
+                .iter()
+                .copied()
+                .map(RgbColor::from_rgb_value)
+                .collect(),
+        }
     }
 
     fn matches_within(&self, pixel: [u8; 4], tolerance: u8) -> bool {
@@ -256,28 +247,6 @@ fn count_text_pixels(image: &RgbaImage, bounds: Bounds, colors: &RgbColorSet) ->
         .count()
 }
 
-fn extract_frame(
-    image: &RgbaImage,
-    bounds: Bounds,
-    frame_number: usize,
-) -> Result<Frame, FrameSourceError> {
-    let cropped_image = image::imageops::crop_imm(
-        image,
-        bounds.x(),
-        bounds.y(),
-        bounds.width(),
-        bounds.height(),
-    )
-    .to_image();
-    Frame::new(
-        format!("{FRAME_NAME_PREFIX} {frame_number}"),
-        cropped_image.width(),
-        cropped_image.height(),
-        cropped_image.into_raw(),
-    )
-    .map_err(|error| FrameSourceError::Decoding(error.to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,18 +361,6 @@ mod tests {
             )
             .is_empty()
         );
-    }
-
-    #[test]
-    fn rejects_color_values_outside_the_rgb_range() {
-        let result = RgbColorSet::from_rgb_values("background", &[0x1_000_000]);
-        assert!(matches!(
-            result,
-            Err(FrameSourceError::InvalidColor {
-                name: "background",
-                value: 0x1_000_000
-            })
-        ));
     }
 
     fn color_set(colors: &[RgbColor]) -> RgbColorSet {

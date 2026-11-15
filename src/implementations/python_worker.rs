@@ -1,6 +1,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct PythonWorker {
     process: Child,
@@ -77,4 +80,32 @@ fn stop_process(process: &mut Child) {
 
 pub fn manifest_path(relative_path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_path)
+}
+
+pub struct TemporaryImage {
+    path: PathBuf,
+}
+
+impl TemporaryImage {
+    pub fn new() -> Self {
+        let file_counter = TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let file_name = format!(
+            "frames_translator_{}_{}.png",
+            std::process::id(),
+            file_counter
+        );
+        Self {
+            path: std::env::temp_dir().join(file_name),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TemporaryImage {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }

@@ -11,7 +11,10 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(CONFIG_PATH);
     let contents = fs::read_to_string(config_path)?;
     let application_config = ApplicationConfig::from_jsonc(&contents)?;
-    assert_eq!(application_config.frames_sourcer(), "FramesDetectorSourcer");
+    assert_eq!(
+        application_config.frames_sourcer(),
+        "NeuralNetworkFramesDetectorSourcer"
+    );
     assert_eq!(application_config.frames_ocr(), "MangaFramesOCR");
     assert_eq!(application_config.text_translator(), "ArgosTextTranslator");
     assert_eq!(application_config.text_renderer(), "SdlThreeTextRenderer");
