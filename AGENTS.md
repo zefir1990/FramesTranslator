@@ -11,6 +11,7 @@ FramesTranslator is a Rust image translation pipeline. The current codebase defi
 - Library target: `frames_translator`
 - Dependency: `image` with only the `png` feature enabled
 - Serialization: `serde`, `serde_json`, and `json5`
+- OCR backend: `manga-ocr` in `.venv` with Python 3.13 and `scripts/manga_ocr_worker.py`
 - No async runtime, database, network client, or dotenv dependency
 
 ## Commands
@@ -44,6 +45,7 @@ Supporting modules:
 - `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
+- `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/`: concrete backends.
 
 Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing documentation is in `README.md`. Keep both accurate when architecture or behavior changes.
@@ -55,7 +57,7 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
 ```jsonc
 {
   "framesSourcer": "ImageFramesSourcer",
-  "framesOcr": "FixtureFramesOCR",
+  "framesOcr": "MangaFramesOCR",
   "textTranslator": "DictionaryTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
@@ -76,6 +78,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
+| `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker in `.venv` |
 | `DictionaryTextTranslator` | Exact-match lookup from a fixed two-entry dictionary |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
 
@@ -86,12 +89,12 @@ These are development and test backends, not production implementations.
 Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
-- OCR, translator, and renderer tests construct implementations through the factory.
+- `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes it through `MangaFramesOCR`, and asserts recognized Japanese text contains `話す`.
 - `tests/frames_sourcer_test.rs` constructs the configured source through the factory and verifies the default `test-case/Shadowrun_02.png` image.
 - `tests/application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests/tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates it, and round-trips `TestsConfig` through JSONC.
 
-The sample image is `320x224`, and the configured `"Actions Menu"` frame is `91x68` at `(18, 86)`. Tests assert PNG decoding, configured frame extraction and crop pixels, frame exhaustion, exact OCR regions, batch translation, rendering output, and out-of-bounds rejection.
+The sample image is `320x224`, and the configured `"Actions Menu"` frame is `91x68` at `(18, 86)`. Tests assert PNG decoding, configured frame extraction and crop pixels, Manga OCR text extraction, frame exhaustion, batch translation, rendering output, and out-of-bounds rejection.
 
 When adding an implementation:
 

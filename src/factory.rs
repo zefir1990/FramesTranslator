@@ -5,11 +5,11 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::application_config::ApplicationConfig;
-use crate::frames_ocr::FramesOCR;
+use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
     BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR, ImageFramesSourcer,
-    SyntheticFramesSourcer,
+    MangaFramesOCR, SyntheticFramesSourcer,
 };
 use crate::tests_config::TestsConfig;
 use crate::text_renderer::TextRenderer;
@@ -41,6 +41,7 @@ pub fn create_frames_sourcer(
 pub fn create_frames_ocr(config: &ApplicationConfig) -> Result<Box<dyn FramesOCR>, FactoryError> {
     match config.frames_ocr() {
         "FixtureFramesOCR" => Ok(Box::new(FixtureFramesOCR::new())),
+        "MangaFramesOCR" => Ok(Box::new(MangaFramesOCR::new()?)),
         name => Err(FactoryError::UnknownImplementation {
             variable: "framesOcr",
             name: name.to_owned(),
@@ -87,6 +88,7 @@ fn manifest_path(relative_path: &str) -> PathBuf {
 #[derive(Debug)]
 pub enum FactoryError {
     FrameSource(FrameSourceError),
+    Recognition(RecognitionError),
     Io {
         path: PathBuf,
         source: io::Error,
@@ -105,6 +107,7 @@ impl Display for FactoryError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::FrameSource(error) => write!(formatter, "{error}"),
+            Self::Recognition(error) => write!(formatter, "{error}"),
             Self::Io { path, source } => {
                 write!(formatter, "failed to read {}: {source}", path.display())
             }
@@ -122,6 +125,7 @@ impl Error for FactoryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::FrameSource(error) => Some(error),
+            Self::Recognition(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             Self::TestsConfig { source, .. } => Some(source),
             Self::UnknownImplementation { .. } => None,
@@ -132,5 +136,11 @@ impl Error for FactoryError {
 impl From<FrameSourceError> for FactoryError {
     fn from(error: FrameSourceError) -> Self {
         Self::FrameSource(error)
+    }
+}
+
+impl From<RecognitionError> for FactoryError {
+    fn from(error: RecognitionError) -> Self {
+        Self::Recognition(error)
     }
 }

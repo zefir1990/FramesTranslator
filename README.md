@@ -36,10 +36,11 @@ Core models:
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
+| `FramesOCR` | `MangaFramesOCR` | Runs Manga OCR through a persistent Python worker. |
 | `TextTranslator` | `DictionaryTextTranslator` | Translates text through a fixed dictionary. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
 
-`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering.
+`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` runs the Python `manga-ocr` package through `.venv` and requires the model to be downloaded on first use.
 
 ## Configuration
 
@@ -48,7 +49,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 ```jsonc
 {
   "framesSourcer": "ImageFramesSourcer",
-  "framesOcr": "FixtureFramesOCR",
+  "framesOcr": "MangaFramesOCR",
   "textTranslator": "DictionaryTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
@@ -105,6 +106,8 @@ src/
   text_renderer.rs             Renderer trait and error
   text_translator.rs           Translator trait and error
   implementations/             Concrete implementations
+scripts/
+  manga_ocr_worker.py           Persistent Manga OCR worker
 tests/
   application_config_test.rs
   frames_ocr_test.rs

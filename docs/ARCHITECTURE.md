@@ -127,7 +127,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 ```jsonc
 {
   "framesSourcer": "ImageFramesSourcer",
-  "framesOcr": "FixtureFramesOCR",
+  "framesOcr": "MangaFramesOCR",
   "textTranslator": "DictionaryTextTranslator",
   "textRenderer": "BlockTextRenderer"
 }
@@ -172,10 +172,28 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG and extracts the named frame rectangles from `TestsConfig` | Single image, no video or directory input |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
+| `MangaFramesOCR` | `FramesOCR` | Sends frame PNGs to a persistent `manga-ocr` Python worker | Uses the whole frame as text bounds; Japanese-focused model; requires `.venv` |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled.
+
+`MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. Frames are encoded to temporary PNG files, sent through stdin, and responses are read from stdout. Worker access is serialized by a mutex. If no text is recognized, the frame produces no regions; otherwise the frame produces one region with whole-frame bounds.
+
+```mermaid
+sequenceDiagram
+    participant OCR as MangaFramesOCR
+    participant Worker as manga_ocr.py
+    participant Model as MangaOcr
+
+    OCR->>Worker: spawn and wait for READY
+    Worker->>Model: load kha-white/manga-ocr-base
+    Worker-->>OCR: READY
+    OCR->>Worker: temporary PNG path
+    Worker->>Model: OCR image
+    Model-->>Worker: text
+    Worker-->>OCR: OK text
+```
 
 ## Error strategy
 
@@ -188,7 +206,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame` |
-| `FactoryError` | `FrameSource`, `Io`, `TestsConfig`, `UnknownImplementation` |
+| `FactoryError` | `FrameSource`, `Recognition`, `Io`, `TestsConfig`, `UnknownImplementation` |
 
 Errors are propagated with `?`. `FactoryError` preserves source errors where a dedicated variant exists. No stage panics on malformed external input; invalid dimensions, missing configuration, unknown class names, and out-of-bounds rendering are represented as errors.
 
@@ -206,6 +224,7 @@ Coverage includes:
 - PNG decoding, configured frame extraction, crop dimensions and pixel fidelity,
 - source termination,
 - exact OCR regions and frame containment,
+- Manga OCR protocol response parsing and real `"Actions Menu"` text extraction,
 - single and batch translation,
 - unknown dictionary entries,
 - rendered region color, unchanged frame dimensions,

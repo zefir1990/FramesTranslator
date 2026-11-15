@@ -2,37 +2,36 @@ mod support;
 
 use std::error::Error;
 
-use frames_translator::factory::create_frames_ocr;
-use frames_translator::frame::Frame;
+use frames_translator::factory::{create_frames_ocr, create_frames_sourcer};
+use frames_translator::text_region::Bounds;
 
-const FRAME_WIDTH: u32 = 64;
-const FRAME_HEIGHT: u32 = 48;
-const FRAME_NAME: &str = "OCR test frame";
-const EXPECTED_REGIONS: [(&str, u32, u32, u32, u32); 2] = [
-    ("Shadowrun", 10, 8, 40, 12),
-    ("Second Edition", 10, 28, 40, 12),
-];
+const EXPECTED_FRAME_COUNT: usize = 1;
+const EXPECTED_TEXT_FRAGMENT: &str = "話す";
 
 #[test]
-fn frames_ocr_recognizes_regions_inside_the_frame() -> Result<(), Box<dyn Error>> {
+fn frames_ocr_recognizes_shadowrun_frame_text() -> Result<(), Box<dyn Error>> {
     let application_config = support::load_application_config()?;
-    let frame = Frame::new(
-        FRAME_NAME,
-        FRAME_WIDTH,
-        FRAME_HEIGHT,
-        vec![0; FRAME_WIDTH as usize * FRAME_HEIGHT as usize * 4],
-    )?;
+    let mut frames_sourcer = create_frames_sourcer(&application_config)?;
     let frames_ocr = create_frames_ocr(&application_config)?;
-    let regions = frames_ocr.recognize(&frame)?;
-    assert_eq!(regions.len(), EXPECTED_REGIONS.len());
-    for (region, (text, x, y, width, height)) in regions.iter().zip(EXPECTED_REGIONS) {
-        assert_eq!(region.text(), text);
-        assert_eq!(region.bounds().x(), x);
-        assert_eq!(region.bounds().y(), y);
-        assert_eq!(region.bounds().width(), width);
-        assert_eq!(region.bounds().height(), height);
-        assert!(region.bounds().right() <= frame.width());
-        assert!(region.bounds().bottom() <= frame.height());
+    let mut frame_count = 0;
+    let mut recognized_text = String::new();
+    while let Some(frame) = frames_sourcer.next_frame()? {
+        let regions = frames_ocr.recognize(&frame)?;
+        assert!(!regions.is_empty());
+        for region in regions {
+            assert!(!region.text().is_empty());
+            assert_eq!(
+                region.bounds(),
+                Bounds::new(0, 0, frame.width(), frame.height())
+            );
+            recognized_text.push_str(region.text());
+        }
+        frame_count += 1;
     }
+    assert_eq!(frame_count, EXPECTED_FRAME_COUNT);
+    assert!(
+        recognized_text.contains(EXPECTED_TEXT_FRAGMENT),
+        "recognized text: {recognized_text:?}"
+    );
     Ok(())
 }

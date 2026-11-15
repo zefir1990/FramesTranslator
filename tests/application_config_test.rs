@@ -12,7 +12,7 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     let contents = fs::read_to_string(config_path)?;
     let application_config = ApplicationConfig::from_jsonc(&contents)?;
     assert_eq!(application_config.frames_sourcer(), "ImageFramesSourcer");
-    assert_eq!(application_config.frames_ocr(), "FixtureFramesOCR");
+    assert_eq!(application_config.frames_ocr(), "MangaFramesOCR");
     assert_eq!(
         application_config.text_translator(),
         "DictionaryTextTranslator"
