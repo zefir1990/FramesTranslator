@@ -19,6 +19,10 @@ pub enum FrameSourceError {
         image_width: u32,
         image_height: u32,
     },
+    InvalidColor {
+        name: &'static str,
+        value: u32,
+    },
 }
 
 impl Display for FrameSourceError {
@@ -39,6 +43,10 @@ impl Display for FrameSourceError {
                 bounds.x(),
                 bounds.y()
             ),
+            Self::InvalidColor { name, value } => write!(
+                formatter,
+                "frame source {name} color 0x{value:06X} is outside the 24-bit RGB range"
+            ),
         }
     }
 }
@@ -47,7 +55,7 @@ impl Error for FrameSourceError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::Decoding(_) | Self::RegionOutOfBounds { .. } => None,
+            Self::Decoding(_) | Self::RegionOutOfBounds { .. } | Self::InvalidColor { .. } => None,
         }
     }
 }

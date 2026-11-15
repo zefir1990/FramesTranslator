@@ -15,6 +15,11 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
     assert_eq!(application_config.frames_ocr(), "MangaFramesOCR");
     assert_eq!(application_config.text_translator(), "ArgosTextTranslator");
     assert_eq!(application_config.text_renderer(), "SdlThreeTextRenderer");
+    assert_eq!(
+        application_config.frames_detection_background_color(),
+        0x000000
+    );
+    assert_eq!(application_config.frames_detection_text_color(), 0xFCFCFC);
     let serialized = application_config.to_jsonc()?;
     let serialized_value: serde_json::Value = serde_json::from_str(&serialized)?;
     for key in [
@@ -22,6 +27,8 @@ fn application_config_serializes_and_deserializes_jsonc() -> Result<(), Box<dyn 
         "framesOcr",
         "textTranslator",
         "textRenderer",
+        "framesDetectionBackgroundColor",
+        "framesDetectionTextColor",
     ] {
         assert!(serialized_value.get(key).is_some());
     }

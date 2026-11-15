@@ -9,7 +9,8 @@ use crate::frames_ocr::{FramesOCR, RecognitionError};
 use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
     ArgosTextTranslator, BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR,
-    ImageFramesSourcer, MangaFramesOCR, SdlThreeTextRenderer, SyntheticFramesSourcer,
+    FramesDetectorSourcer, ImageFramesSourcer, MangaFramesOCR, SdlThreeTextRenderer,
+    SyntheticFramesSourcer,
 };
 use crate::tests_config::TestsConfig;
 use crate::text_renderer::TextRenderer;
@@ -23,6 +24,11 @@ pub fn create_frames_sourcer(
 ) -> Result<Box<dyn FramesSourcer>, FactoryError> {
     match config.frames_sourcer() {
         "SyntheticFramesSourcer" => Ok(Box::new(SyntheticFramesSourcer::new())),
+        "FramesDetectorSourcer" => Ok(Box::new(FramesDetectorSourcer::open(
+            manifest_path(DEFAULT_IMAGE_PATH),
+            config.frames_detection_background_color(),
+            config.frames_detection_text_color(),
+        )?)),
         "ImageFramesSourcer" => {
             let tests_config = load_tests_config(manifest_path(DEFAULT_TESTS_CONFIG_PATH))?;
             let image_path = manifest_path(DEFAULT_IMAGE_PATH);

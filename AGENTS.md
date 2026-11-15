@@ -47,6 +47,7 @@ Supporting modules:
 - `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
 - `src/text_region.rs`: `Bounds`, `TextRegion`, and `TranslatedText`.
 - `src/factory.rs`: composition root; maps class names from `ApplicationConfig` to concrete implementations.
+- `src/implementations/frames_detector_sourcer.rs`: background-color and text-color frame detection.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
 - `build.rs`: copies the vendored SDL3 DLL into target directories.
@@ -64,9 +65,13 @@ Detailed design documentation is in `docs/ARCHITECTURE.md`. User-facing document
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "SdlThreeTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer",
+  "framesDetectionBackgroundColor": 0x000000,
+  "framesDetectionTextColor": 0xfcfcfc
 }
 ```
+
+`framesDetectionBackgroundColor` and `framesDetectionTextColor` are 24-bit RGB values used by `FramesDetectorSourcer`. `ImageFramesSourcer` remains the selected source, so extraction still uses the named frames in `tests-config.jsonc`.
 
 Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationConfig` without an explicit requirement to change the configuration model. Backend-specific values currently live as private constants in the implementation files. If configurable settings become necessary, extend the configuration structs and the factory deliberately and update JSONC files, tests, README, and architecture docs.
 
@@ -81,6 +86,7 @@ Do not add paths, colors, sizes, credentials, or feature flags to `ApplicationCo
 | Type | Behavior |
 | --- | --- |
 | `ImageFramesSourcer` | Extracts the named frames configured in `tests-config.jsonc` from one PNG |
+| `FramesDetectorSourcer` | Detects connected background-color regions containing text-color pixels and extracts each as a frame |
 | `SyntheticFramesSourcer` | Yields two fixed `32x24` frames, then `None` |
 | `FixtureFramesOCR` | Returns two fixed text regions without inspecting the frame |
 | `MangaFramesOCR` | Splits frames into text lines and runs Manga OCR per line through a persistent Python worker in `.venv` |
@@ -96,6 +102,7 @@ These are development and test backends, not production implementations.
 Integration tests are in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
+- `tests/frames_detector_sourcer_test.rs` detects the two Shadowrun CD menu panels with `FramesDetectorSourcer`, asserts their order, dimensions, and pixels, and verifies factory selection.
 - `tests/frames_ocr_test.rs` extracts the `"Actions Menu"` frame through the source factory, recognizes four text lines through `MangaFramesOCR`, and asserts the exact line texts.
 - `tests/text_translator_test.rs` translates Japanese text through `ArgosTextTranslator` and verifies the batch `translate_all` method.
 - `tests/shadowrun_cd_pipeline_test.rs` runs the full source → OCR → translation → SDL rendering pipeline and requires four recognized and translated Shadowrun CD menu lines. The SDL window closes after `timeoutSeconds`.
@@ -131,6 +138,7 @@ When adding an implementation:
 
 ## Current limitations
 
+- `FramesDetectorSourcer` matches background and text colors exactly and uses fixed minimum size and density thresholds.
 - OCR and translation use local Python models with model-dependent quality.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
 - PNG only.

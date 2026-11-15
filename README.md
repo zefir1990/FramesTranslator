@@ -34,6 +34,7 @@ Core models:
 | Interface | Concrete type | Behavior |
 | --- | --- | --- |
 | `FramesSourcer` | `ImageFramesSourcer` | Extracts named frames from `test-case/Shadowrun_02.png` using `test-case/tests-config.jsonc`. |
+| `FramesSourcer` | `FramesDetectorSourcer` | Detects frames as connected background-color regions that contain text-color pixels. |
 | `FramesSourcer` | `SyntheticFramesSourcer` | Produces fixed in-memory frames. |
 | `FramesOCR` | `FixtureFramesOCR` | Returns a fixed set of text regions. |
 | `FramesOCR` | `MangaFramesOCR` | Splits frames into text lines and runs Manga OCR per line. |
@@ -53,11 +54,13 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "SdlThreeTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer",
+  "framesDetectionBackgroundColor": 0x000000,
+  "framesDetectionTextColor": 0xfcfcfc
 }
 ```
 
-`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
+`ApplicationConfig::from_jsonc` loads this file and `factory` creates the selected implementation. `framesDetectionBackgroundColor` and `framesDetectionTextColor` are 24-bit RGB values used by `FramesDetectorSourcer`; JSONC hexadecimal literals are supported. Detected frames are ordered top-to-bottom and left-to-right and are named `Detected Frame 1`, `Detected Frame 2`, and so on. To add a backend, implement the relevant trait, add its class name to the factory, and select it in the application configuration.
 
 Test-case frame layouts are loaded from `test-case/tests-config.jsonc` through `TestsConfig::from_jsonc`. The parser accepts JSONC comments, and `TestsConfig::to_jsonc` serializes the configuration back to JSON.
 
@@ -115,6 +118,7 @@ scripts/
 tests/
   application_config_test.rs
   frames_ocr_test.rs
+  frames_detector_sourcer_test.rs
   frames_sourcer_test.rs
   shadowrun_cd_pipeline_test.rs
   tests_config_test.rs
@@ -138,7 +142,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The test suite covers image decoding, frame exhaustion, OCR region bounds, four-line extraction, batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
+The test suite covers image decoding, color-based frame detection, frame exhaustion, OCR region bounds, four-line extraction, batch translation, rendering output, out-of-bounds rejection, and the end-to-end SDL preview flow with a configured timeout.
 
 ## Status
 

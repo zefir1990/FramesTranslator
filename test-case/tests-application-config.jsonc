@@ -2,5 +2,8 @@
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "SdlThreeTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer",
+  // Detected frames use a solid black background with near-white text
+  "framesDetectionBackgroundColor": 0x000000,
+  "framesDetectionTextColor": 0xfcfcfc
 }

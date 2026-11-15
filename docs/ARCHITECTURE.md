@@ -129,7 +129,9 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
   "framesSourcer": "ImageFramesSourcer",
   "framesOcr": "MangaFramesOCR",
   "textTranslator": "ArgosTextTranslator",
-  "textRenderer": "SdlThreeTextRenderer"
+  "textRenderer": "SdlThreeTextRenderer",
+  "framesDetectionBackgroundColor": 0x000000,
+  "framesDetectionTextColor": 0xfcfcfc
 }
 ```
 
@@ -144,7 +146,11 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `create_text_translator` | `text_translator()` | `textTranslator` |
 | `create_text_renderer` | `text_renderer()` | `textRenderer` |
 
-`ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions. Because the application configuration is restricted to class names, backend-specific settings are currently constants inside implementations rather than configuration values.
+`ImageFramesSourcer` uses the fixed image `test-case/Shadowrun_02.png` and the frame definitions in `test-case/tests-config.jsonc` when created through the factory. The constructor `ImageFramesSourcer::open(path, frames_config)` remains available for explicit image paths and frame definitions.
+
+`FramesDetectorSourcer` uses the same fixed image and reads `framesDetectionBackgroundColor` and `framesDetectionTextColor` from `ApplicationConfig`. Both values are 24-bit RGB integers; JSONC hexadecimal literals such as `0x000000` are accepted. The detector is available through the factory but is not the selected source in the current test configuration, so existing named-frame pipeline tests keep their single-frame expectations. Color values outside `0xFFFFFF` are rejected through `FrameSourceError::InvalidColor`.
+
+Because the application configuration remains focused on implementation selection and the two detector colors, other backend-specific settings are constants inside implementations rather than configuration values.
 
 ### Configuration serialization
 
@@ -173,6 +179,7 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | Type | Contract | Behavior | Limitations |
 | --- | --- | --- | --- |
 | `ImageFramesSourcer` | `FramesSourcer` | Decodes a PNG and extracts the named frame rectangles from `TestsConfig` | Single image, no video or directory input |
+| `FramesDetectorSourcer` | `FramesSourcer` | Finds connected background-color components that contain text-color pixels and extracts each component as a frame | Exact color match and fixed size and density thresholds |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
 | `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; threshold-based line detection |
@@ -182,6 +189,8 @@ Implementation selection is defined by `ApplicationConfig`. The current test con
 | `SdlThreeTextRenderer` | `TextRenderer` | Shows `test-case/Shadowrun_02.png`, blacks out the configured frame, draws translated lines, and waits for the window to close | Uses SDL's ASCII debug font and requires a display |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled. `SdlThreeTextRenderer` uses vendored SDL3 3.4.20 libraries under `third-party/sdl3`; `build.rs` adds the import library path and copies `SDL3.dll` next to test and binary outputs.
+
+`FramesDetectorSourcer` builds a mask of pixels matching the configured background color, traces four-connected components, and evaluates each component's bounding box. A bounding box becomes a frame when it is at least `16x16`, contains at least 16 text-color pixels, and is at least 50 percent background-color pixels. Accepted frames are sorted top-to-bottom and left-to-right, then cropped and named `Detected Frame {number}`. The Shadowrun CD sample yields the `Actions Menu` panel at `(18, 86, 91, 68)` and the contacts panel at `(146, 86, 75, 68)`.
 
 `MangaFramesOCR` starts `.venv/Scripts/python.exe` with `scripts/manga_ocr_worker.py` and keeps the worker alive for the lifetime of the OCR instance. It detects horizontal text lines by luminance, crops each line with vertical padding, encodes it to a temporary PNG, and reads the line text from stdout. Worker access is serialized by a mutex. Each recognized line becomes one `TextRegion` with bounds relative to the original frame; empty lines are omitted.
 
@@ -209,7 +218,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | Error | Variants |
 | --- | --- |
 | `FrameError` | `DimensionsOverflow`, `PixelBufferSizeMismatch` |
-| `FrameSourceError` | `Io`, `Decoding`, `RegionOutOfBounds` |
+| `FrameSourceError` | `Io`, `Decoding`, `RegionOutOfBounds`, `InvalidColor` |
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame`, `RenderingFailed` |
@@ -223,12 +232,14 @@ Integration tests live in `tests/`:
 
 - `tests/support/mod.rs` loads `test-case/tests-application-config.jsonc` from `CARGO_MANIFEST_DIR`.
 - `frames_sourcer_test.rs`, `frames_ocr_test.rs`, `text_translator_test.rs`, and `text_renderer_test.rs` obtain concrete types through the factory.
+- `frames_detector_sourcer_test.rs` opens `test-case/Shadowrun_02.png` directly with the configured detection colors, asserts the detected panel order, dimensions, and pixel fidelity, and verifies factory selection of `FramesDetectorSourcer`.
 - `application_config_test.rs` loads and validates the application configuration and round-trips it through JSONC.
 - `tests_config_test.rs` loads `test-case/tests-config.jsonc`, validates its contents, and round-trips it through JSONC serialization and deserialization.
 
 Coverage includes:
 
 - PNG decoding, configured frame extraction, crop dimensions and pixel fidelity,
+- color-based frame detection, reading-order output, detection thresholds, and invalid color rejection,
 - source termination,
 - exact OCR regions and frame containment,
 - Manga OCR protocol response parsing, four-line segmentation, and real `"Actions Menu"` text extraction,
@@ -292,4 +303,5 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` uses SDL's ASCII debug font.
 - Only PNG input is supported.
 - Frames are processed synchronously and fully in memory.
-- `ApplicationConfig` supports implementation selection only.
+- `ApplicationConfig` supports implementation selection plus `FramesDetectorSourcer` colors.
+- `FramesDetectorSourcer` requires exact background and text color matches and fixed detection thresholds.
