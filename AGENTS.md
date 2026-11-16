@@ -116,7 +116,7 @@ The selected detector uses `test-case/Shadowrun_02.png` when constructed through
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
 | `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text fitted inside the detected frame in an SDL3 window until closed |
 | `SoftwareTextRenderer` | Draws translated text into a new frame through an SDL software renderer without opening a window |
-| `WindowsScreenshoter` | Lists visible top-level Windows windows and captures a window into an RGBA frame through `PrintWindow`, with a `BitBlt` fallback |
+| `WindowsScreenshoter` | Lists visible top-level Windows windows, captures the full window through `PrintWindow` with a `BitBlt` fallback, and composites the client area into the result |
 
 These are development, test, and local application backends, not production implementations.
 

@@ -46,7 +46,7 @@ Core models:
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
 | `TextRenderer` | `SdlThreeTextRenderer` | Displays the Shadowrun image with translated text in an SDL3 window. |
 | `TextRenderer` | `SoftwareTextRenderer` | Renders translated text into a new frame through SDL's software renderer without opening a window. |
-| `Screenshoter` | `WindowsScreenshoter` | Lists visible top-level Windows windows and captures the selected window as an RGBA frame. |
+| `Screenshoter` | `WindowsScreenshoter` | Lists visible top-level Windows windows and captures the full window as an RGBA frame, compositing the client area so its content is complete. |
 
 `FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use. `SdlThreeTextRenderer` displays results in an SDL3 window until the user closes it. `WindowsScreenshoter` is available on Windows only; it captures through `PrintWindow` and falls back to `BitBlt` when a window does not support full-content printing.
 
@@ -111,6 +111,8 @@ cargo run --bin ScreenshotTranslator -- "Source Image Viewer"
 ```
 
 Building the imgui backend requires a C++ compiler for the Dear ImGui sources. With the GNU toolchain, `build.rs` copies the required MinGW runtime DLLs next to the executable. The SDL_Renderer imgui backend follows the MIT-licensed `imgui-sdl3-renderer` crate.
+
+Capture uses the full window size and composites the client area into it, so title bars, menus, and the complete client content are all present.
 
 Stop Capture cancels the worker cooperatively: the UI returns immediately, while a blocking OCR or translation call that is already running may finish before the worker thread exits.
 

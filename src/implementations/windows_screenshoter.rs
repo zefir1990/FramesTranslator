@@ -16,6 +16,7 @@ type WindowEnumerationParameter = isize;
 
 const WINDOW_EXTENDED_STYLE_INDEX: i32 = -20;
 const WINDOW_EXTENDED_STYLE_TOOL_WINDOW: u32 = 0x0000_0080;
+const PRINT_WINDOW_CLIENT_ONLY: u32 = 0x0000_0001;
 const PRINT_WINDOW_RENDER_FULL_CONTENT: u32 = 0x0000_0002;
 const DIB_RGB_COLORS: u32 = 0;
 const BI_RGB: u32 = 0;
@@ -28,6 +29,13 @@ struct Rect {
     top: i32,
     right: i32,
     bottom: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct Point {
+    x: i32,
+    y: i32,
 }
 
 #[repr(C)]
@@ -76,6 +84,8 @@ unsafe extern "system" {
     fn GetWindowTextW(window: WindowHandle, text: *mut u16, maximum_length: i32) -> i32;
     fn IsWindowVisible(window: WindowHandle) -> Bool;
     fn GetWindowRect(window: WindowHandle, rectangle: *mut Rect) -> Bool;
+    fn GetClientRect(window: WindowHandle, rectangle: *mut Rect) -> Bool;
+    fn ClientToScreen(window: WindowHandle, point: *mut Point) -> Bool;
     fn GetWindowDC(window: WindowHandle) -> DeviceContext;
     fn ReleaseDC(window: WindowHandle, device_context: DeviceContext) -> i32;
     fn PrintWindow(window: WindowHandle, device_context: DeviceContext, flags: u32) -> Bool;
@@ -148,12 +158,12 @@ struct WindowSource {
 }
 
 #[derive(Clone, Copy)]
-struct WindowBounds {
+struct Bounds {
     width: u32,
     height: u32,
 }
 
-impl WindowBounds {
+impl Bounds {
     fn pixel_byte_length(self, source: &str) -> Result<usize, ScreenshotError> {
         (self.width as usize)
             .checked_mul(self.height as usize)
@@ -227,7 +237,10 @@ unsafe fn window_title(window: WindowHandle) -> Option<String> {
 }
 
 fn capture_window(window_source: &WindowSource) -> Result<Frame, ScreenshotError> {
-    let bounds = window_bounds(window_source)?;
+    let window_rectangle = window_rectangle(window_source)?;
+    let bounds = bounds_from_rectangle(&window_rectangle, &window_source.title)?;
+    let client_bounds = client_bounds(window_source)?;
+    let client_offset = client_offset(window_source, &window_rectangle)?;
     let byte_length = bounds.pixel_byte_length(&window_source.title)?;
     let device_context = MemoryDeviceContext::new(&window_source.title)?;
     let bitmap = WindowBitmap::new(
@@ -243,15 +256,27 @@ fn capture_window(window_source: &WindowSource) -> Result<Frame, ScreenshotError
             PRINT_WINDOW_RENDER_FULL_CONTENT,
         )
     };
-    if captured == 0 {
+    let mut rgba_pixels = bitmap.rgba_pixels();
+    if captured == 0 || is_blank(&rgba_pixels) {
         copy_window_content(
             window_source.window,
             &device_context,
             &window_source.title,
             bounds,
         )?;
+        rgba_pixels = bitmap.rgba_pixels();
     }
-    let rgba_pixels = bitmap.rgba_pixels();
+    if let Some(client_pixels) = capture_client_pixels(window_source, client_bounds)
+        && !is_blank(&client_pixels)
+    {
+        composite_client_pixels(
+            &mut rgba_pixels,
+            bounds,
+            client_bounds,
+            client_offset,
+            &client_pixels,
+        );
+    }
     Frame::new(
         window_source.title.clone(),
         bounds.width,
@@ -261,7 +286,7 @@ fn capture_window(window_source: &WindowSource) -> Result<Frame, ScreenshotError
     .map_err(ScreenshotError::from)
 }
 
-fn window_bounds(window_source: &WindowSource) -> Result<WindowBounds, ScreenshotError> {
+fn window_rectangle(window_source: &WindowSource) -> Result<Rect, ScreenshotError> {
     let mut rectangle = Rect::default();
     let succeeded = unsafe { GetWindowRect(window_source.window, &mut rectangle) };
     if succeeded == 0 {
@@ -270,26 +295,120 @@ fn window_bounds(window_source: &WindowSource) -> Result<WindowBounds, Screensho
             reason: format!("GetWindowRect failed: {}", std::io::Error::last_os_error()),
         });
     }
+    Ok(rectangle)
+}
+
+fn client_bounds(window_source: &WindowSource) -> Result<Bounds, ScreenshotError> {
+    let mut rectangle = Rect::default();
+    let succeeded = unsafe { GetClientRect(window_source.window, &mut rectangle) };
+    if succeeded == 0 {
+        return Err(ScreenshotError::Capture {
+            source: window_source.title.clone(),
+            reason: format!("GetClientRect failed: {}", std::io::Error::last_os_error()),
+        });
+    }
+    bounds_from_rectangle(&rectangle, &window_source.title)
+}
+
+fn bounds_from_rectangle(rectangle: &Rect, source: &str) -> Result<Bounds, ScreenshotError> {
     let width = i64::from(rectangle.right) - i64::from(rectangle.left);
     let height = i64::from(rectangle.bottom) - i64::from(rectangle.top);
     if width <= 0 || height <= 0 {
         return Err(ScreenshotError::InvalidDimensions {
-            source: window_source.title.clone(),
+            source: source.to_owned(),
             width: u32::try_from(width).unwrap_or(0),
             height: u32::try_from(height).unwrap_or(0),
         });
     }
-    Ok(WindowBounds {
+    Ok(Bounds {
         width: width as u32,
         height: height as u32,
     })
+}
+
+fn client_offset(
+    window_source: &WindowSource,
+    window_rectangle: &Rect,
+) -> Result<(u32, u32), ScreenshotError> {
+    let mut point = Point::default();
+    let succeeded = unsafe { ClientToScreen(window_source.window, &mut point) };
+    if succeeded == 0 {
+        return Err(ScreenshotError::Capture {
+            source: window_source.title.clone(),
+            reason: format!("ClientToScreen failed: {}", std::io::Error::last_os_error()),
+        });
+    }
+    let x = i64::from(point.x) - i64::from(window_rectangle.left);
+    let y = i64::from(point.y) - i64::from(window_rectangle.top);
+    if x < 0 || y < 0 {
+        return Err(ScreenshotError::Capture {
+            source: window_source.title.clone(),
+            reason: format!("client origin ({x}, {y}) is outside the window"),
+        });
+    }
+    Ok((x as u32, y as u32))
+}
+
+fn capture_client_pixels(window_source: &WindowSource, bounds: Bounds) -> Option<Vec<u8>> {
+    let byte_length = bounds.pixel_byte_length(&window_source.title).ok()?;
+    let device_context = MemoryDeviceContext::new(&window_source.title).ok()?;
+    let bitmap = WindowBitmap::new(
+        device_context.handle(),
+        &window_source.title,
+        bounds,
+        byte_length,
+    )
+    .ok()?;
+    let captured = unsafe {
+        PrintWindow(
+            window_source.window,
+            device_context.handle(),
+            PRINT_WINDOW_CLIENT_ONLY | PRINT_WINDOW_RENDER_FULL_CONTENT,
+        )
+    };
+    if captured == 0 {
+        return None;
+    }
+    Some(bitmap.rgba_pixels())
+}
+
+fn composite_client_pixels(
+    destination: &mut [u8],
+    destination_bounds: Bounds,
+    client_bounds: Bounds,
+    offset: (u32, u32),
+    client_pixels: &[u8],
+) {
+    let offset_x = offset.0.min(destination_bounds.width);
+    let offset_y = offset.1.min(destination_bounds.height);
+    let copy_width = client_bounds.width.min(destination_bounds.width - offset_x) as usize;
+    let copy_height = client_bounds
+        .height
+        .min(destination_bounds.height - offset_y) as usize;
+    let row_byte_length = copy_width * CHANNELS_PER_PIXEL;
+    for row in 0..copy_height {
+        let source_start = row * client_bounds.width as usize * CHANNELS_PER_PIXEL;
+        let destination_start = ((offset_y as usize + row) * destination_bounds.width as usize
+            + offset_x as usize)
+            * CHANNELS_PER_PIXEL;
+        destination[destination_start..destination_start + row_byte_length]
+            .copy_from_slice(&client_pixels[source_start..source_start + row_byte_length]);
+    }
+}
+
+fn is_blank(rgba_pixels: &[u8]) -> bool {
+    rgba_pixels
+        .as_chunks::<CHANNELS_PER_PIXEL>()
+        .0
+        .iter()
+        .all(|pixel| pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0)
 }
 
 fn copy_window_content(
     window: WindowHandle,
     device_context: &MemoryDeviceContext,
     source: &str,
-    bounds: WindowBounds,
+    bounds: Bounds,
 ) -> Result<(), ScreenshotError> {
     let window_device_context = WindowDeviceContext::new(window, source)?;
     let succeeded = unsafe {
@@ -358,7 +477,7 @@ impl WindowBitmap {
     fn new(
         device_context: DeviceContext,
         source: &str,
-        bounds: WindowBounds,
+        bounds: Bounds,
         byte_length: usize,
     ) -> Result<Self, ScreenshotError> {
         let bitmap_info = BitmapInfo {
