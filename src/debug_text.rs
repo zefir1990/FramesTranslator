@@ -1,6 +1,5 @@
 use sdl3::pixels::Color;
-use sdl3::render::Canvas;
-use sdl3::video::Window;
+use sdl3::render::{Canvas, RenderTarget};
 
 use crate::text_region::{Bounds, TranslatedText};
 
@@ -102,9 +101,9 @@ impl DebugTextLayout {
             .fold(0.0, f32::max)
     }
 
-    pub fn draw(
+    pub fn draw<Target: RenderTarget>(
         &self,
-        canvas: &mut Canvas<Window>,
+        canvas: &mut Canvas<Target>,
         origin: (f32, f32),
         scene_scale: f32,
         color: Color,

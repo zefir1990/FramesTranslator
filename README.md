@@ -7,7 +7,7 @@ FramesTranslator is a Rust workspace for building an image translation pipeline:
 3. Translate recognized text.
 4. Render translated text back onto frames.
 
-The pipeline is defined through four traits and currently ships with deterministic local implementations for development and testing.
+The pipeline is defined through four traits plus a screenshot-acquisition contract and currently ships with deterministic local implementations for development and testing.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed design and extension guidance.
 
@@ -45,6 +45,7 @@ Core models:
 | `TextTranslator` | `ArgosTextTranslator` | Translates Japanese to English through Argos Translate. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
 | `TextRenderer` | `SdlThreeTextRenderer` | Displays the Shadowrun image with translated text in an SDL3 window. |
+| `TextRenderer` | `SoftwareTextRenderer` | Renders translated text into a new frame through SDL's software renderer without opening a window. |
 | `Screenshoter` | `WindowsScreenshoter` | Lists visible top-level Windows windows and captures the selected window as an RGBA frame. |
 
 `FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use. `SdlThreeTextRenderer` displays results in an SDL3 window until the user closes it. `WindowsScreenshoter` is available on Windows only; it captures through `PrintWindow` and falls back to `BitBlt` when a window does not support full-content printing.
@@ -92,6 +93,23 @@ cargo run -- test-case/Shadowrun_03.png
 ```powershell
 cargo run --bin NeuralNetworkFramesDetectorSourcerTestApplication -- test-case/Shadowrun_02.png
 ```
+
+## Screenshot translator application
+
+`ScreenshotTranslator` is an imgui application that translates a live Windows window:
+
+1. Lists visible top-level windows through `WindowsScreenshoter`.
+2. Captures the selected window when **Translate selected window** is pressed.
+3. Runs frame detection, Manga OCR, Argos translation, and `SoftwareTextRenderer` on the capture.
+4. Renders the translated frames back into the screenshot and displays the result in the imgui window.
+
+A window title can be passed as the first argument to capture and translate it immediately:
+
+```powershell
+cargo run --bin ScreenshotTranslator -- "Source Image Viewer"
+```
+
+Building the imgui backend requires a C++ compiler for the Dear ImGui sources. With the GNU toolchain, `build.rs` copies the required MinGW runtime DLLs next to the executable. The SDL_Renderer imgui backend follows the MIT-licensed `imgui-sdl3-renderer` crate.
 
 ## Library usage
 
@@ -145,6 +163,7 @@ src/
   sdl_image_translator.rs      FramesTranslator scene builder and error type
   bin/
     neural_network_frames_detector_sourcer_test_application.rs  Detector-only SDL application
+    screenshot_translator/      imgui window selection and translation application
   tests_config.rs              Per-test configuration structs
   text_region.rs               Bounds, TextRegion, TranslatedText
   text_renderer.rs             Renderer trait and error
@@ -184,6 +203,7 @@ third-party/
 cargo build
 cargo run
 cargo run -- test-case/Shadowrun_03.png
+cargo run --bin ScreenshotTranslator
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
@@ -193,7 +213,7 @@ The test suite covers image decoding, procedural and neural detection of both Sh
 
 ## Status
 
-The pipeline interfaces, configuration, factory, tests, and interactive SDL3 application are in place. Run `cargo run` and drop an image into the window, or pass an image path to translate it immediately. The configured timeout-based SDL preview remains available for the automated pipeline tests.
+The pipeline interfaces, configuration, factory, tests, interactive SDL3 application, and imgui screenshot translator are in place. Run `cargo run` and drop an image into the window, or pass an image path to translate it immediately. Run `cargo run --bin ScreenshotTranslator` to translate a live Windows window through the same pipeline. The configured timeout-based SDL preview remains available for the automated pipeline tests.
 
 ## License
 

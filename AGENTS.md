@@ -2,14 +2,16 @@
 
 ## Repository
 
-FramesTranslator is a Rust image translation pipeline with interactive SDL applications. The pipeline contracts, domain models, configuration, implementation factory, local backends, and integration tests are implemented; `FramesTranslator` processes dropped images through detection, OCR, translation, and rendering, while `NeuralNetworkFramesDetectorSourcerTestApplication` shows only detected frame bounds.
+FramesTranslator is a Rust image translation pipeline with interactive SDL and imgui applications. The pipeline contracts, domain models, configuration, implementation factory, local backends, and integration tests are implemented; `FramesTranslator` processes dropped images through detection, OCR, translation, and rendering, `NeuralNetworkFramesDetectorSourcerTestApplication` shows only detected frame bounds, and `ScreenshotTranslator` captures a selected Windows window and translates it through the same pipeline.
 
 ## Stack
 
 - Rust, edition 2024
-- Binary targets: `FramesTranslator` and `NeuralNetworkFramesDetectorSourcerTestApplication`
+- Binary targets: `FramesTranslator`, `NeuralNetworkFramesDetectorSourcerTestApplication`, and `ScreenshotTranslator`
 - Library target: `frames_translator`
 - Dependency: `image` with only the `png` feature enabled
+- GUI: `imgui` 0.12 with an SDL3 platform and software-renderer backend in `src/bin/screenshot_translator/`
+- C++ toolchain: MinGW-w64 GCC is required at `C:/mingw64`; `C:/mingw64/bin` must be on `PATH` to build `imgui-sys`
 - Serialization: `serde`, `serde_json`, and `json5`
 - Frame detection backend: PyTorch in `.venv` with `scripts/neural_frame_detector_worker.py`
 - OCR backend: `manga-ocr` in `.venv` with Python 3.13 and `scripts/manga_ocr_worker.py`
@@ -22,12 +24,13 @@ FramesTranslator is a Rust image translation pipeline with interactive SDL appli
 Run these before finishing any change:
 
 ```powershell
+$env:PATH = "C:/mingw64/bin;$env:PATH"
 cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Use `cargo check --all-targets` for a faster compile check when iterating. The clippy command must pass with warnings denied.
+Use `cargo check --all-targets` for a faster compile check when iterating. The clippy command must pass with warnings denied. Building `imgui-sys` requires the MinGW-w64 C++ compiler installed at `C:/mingw64`; on the GNU toolchain `build.rs` copies the MinGW C++ runtime DLLs next to the binaries.
 
 ## Architecture
 
@@ -61,8 +64,10 @@ Supporting modules:
 - `src/implementations/neural_network_frames_detector_sourcer.rs`: local PyTorch frame detector adapter.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
+- `src/implementations/software_text_renderer.rs`: headless frame renderer through SDL's software renderer.
+- `src/bin/screenshot_translator/`: imgui window selection, SDL3 imgui backend, capture pipeline runner, and result display.
 - `src/implementations/windows_screenshoter.rs`: Windows window enumeration and `PrintWindow` capture.
-- `build.rs`: copies the vendored SDL3 DLL into target directories.
+- `build.rs`: copies the vendored SDL3 DLL and, for GNU toolchains, the MinGW C++ runtime DLLs into target directories.
 - `third-party/sdl3`: vendored SDL3 3.4.20 import library, DLL, and license.
 - `src/implementations/`: concrete backends.
 
@@ -110,9 +115,10 @@ The selected detector uses `test-case/Shadowrun_02.png` when constructed through
 | `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
 | `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text fitted inside the detected frame in an SDL3 window until closed |
+| `SoftwareTextRenderer` | Draws translated text into a new frame through an SDL software renderer without opening a window |
 | `WindowsScreenshoter` | Lists visible top-level Windows windows and captures a window into an RGBA frame through `PrintWindow`, with a `BitBlt` fallback |
 
-These are development and test backends, not production implementations.
+These are development, test, and local application backends, not production implementations.
 
 ## Tests
 
@@ -163,8 +169,9 @@ When adding an implementation:
 - `NeuralNetworkFramesDetectorSourcer` retrains a small PyTorch structural classifier when each worker starts and uses image-derived dominant colors only for region proposals.
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
 - `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
-- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
-- The SDL applications process each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
+- `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer`, `SoftwareTextRenderer`, and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
+- The SDL applications process each dropped image synchronously, and `ScreenshotTranslator` processes each capture synchronously, so the window does not repaint during detection, OCR, or translation.
+- `ScreenshotTranslator` requires a C++ compiler for `imgui-sys` and always uses `SoftwareTextRenderer` for its final image.
 - PNG only.
 - `WindowsScreenshoter` is Windows-only and identifies screenshot sources by visible window title.
 - Synchronous, single-threaded processing.

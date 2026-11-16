@@ -11,7 +11,8 @@ use crate::frames_sourcer::{FrameSourceError, FramesSourcer};
 use crate::implementations::{
     ArgosTextTranslator, BlockTextRenderer, DictionaryTextTranslator, FixtureFramesOCR,
     ImageFramesSourcer, MangaFramesOCR, NeuralNetworkFramesDetectorSourcer,
-    ProceduralFramesDetectorSourcer, SdlThreeTextRenderer, SyntheticFramesSourcer,
+    ProceduralFramesDetectorSourcer, SdlThreeTextRenderer, SoftwareTextRenderer,
+    SyntheticFramesSourcer,
 };
 use crate::tests_config::TestsConfig;
 use crate::text_renderer::TextRenderer;
@@ -96,6 +97,7 @@ pub fn create_text_renderer(
     match config.text_renderer() {
         "BlockTextRenderer" => Ok(Box::new(BlockTextRenderer::new())),
         "SdlThreeTextRenderer" => Ok(Box::new(SdlThreeTextRenderer::new())),
+        "SoftwareTextRenderer" => Ok(Box::new(SoftwareTextRenderer::new())),
         name => Err(FactoryError::UnknownImplementation {
             variable: "textRenderer",
             name: name.to_owned(),

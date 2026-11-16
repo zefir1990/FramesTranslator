@@ -59,6 +59,8 @@ flowchart LR
 | `src/sdl_frame_viewer.rs` | Shared SDL3 window, drop-event loop, translucent frame tinting, and frame counter |
 | `src/sdl_image_translator.rs` | `FramesTranslator` scene builder with OCR and translation overlays |
 | `src/bin/neural_network_frames_detector_sourcer_test_application.rs` | Detector-only SDL application entry point |
+| `src/bin/screenshot_translator/` | imgui window selection, screenshot capture, and pipeline runner |
+| `src/implementations/software_text_renderer.rs` | Headless frame renderer using SDL's software renderer and debug font |
 
 ## Domain models
 
@@ -272,6 +274,14 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 
 `NeuralNetworkFramesDetectorSourcerTestApplication` uses the same `sdl_frame_viewer` loop without OCR or translation. It constructs `NeuralNetworkFramesDetectorSourcer` directly, builds scenes with `FrameOverlay::new` so overlays carry no text layout, and always enables verbose tinting and the frame counter. This keeps detector behavior visible without running the slower OCR and translation stages.
 
+## Screenshot translator application
+
+`ScreenshotTranslator` is a separate imgui executable built on SDL3. It uses `WindowsScreenshoter::sources` to list visible top-level windows, captures the selected title with `WindowsScreenshoter::screenshot`, converts the returned `Frame` to an `RgbaImage`, and runs the configured detector, OCR, and translator. Each detected frame is rendered through `SoftwareTextRenderer` and composited back at its detected bounds in the captured screenshot. The resulting image is uploaded to an SDL texture and drawn inside the imgui window.
+
+The application loads `test-case/tests-application-config.jsonc` for the detector, OCR, and translator selection. It always uses `SoftwareTextRenderer` for the final image stage because `SdlThreeTextRenderer` would open and block on a separate window; the imgui window is the application's renderer surface. An optional first command-line argument selects and translates that window immediately.
+
+`src/bin/screenshot_translator/imgui_renderer.rs` implements the imgui SDL_Renderer backend through `SDL_RenderGeometryRaw`, following the MIT-licensed `imgui-sdl3-renderer` crate; `src/bin/screenshot_translator/sdl3_platform.rs` forwards mouse and text-input events and updates display size and delta time. The renderer requires a C++ compiler for `imgui-sys`, and `build.rs` copies the GNU C++ runtime DLLs next to the executable when a MinGW compiler is available.
+
 ## Concrete implementations
 
 | Type | Contract | Behavior | Limitations |
@@ -287,6 +297,7 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 | `ArgosTextTranslator` | `TextTranslator` | Sends JSONL requests to a persistent `argostranslate` Python worker | Defaults to Japanese to English; requires installed Argos language packages |
 | `BlockTextRenderer` | `TextRenderer` | Fills each translated region with a fixed orange color | Draws blocks, not glyphs |
 | `SdlThreeTextRenderer` | `TextRenderer` | Shows `test-case/Shadowrun_02.png`, blacks out the configured frame, draws translated lines fitted to the frame, and waits for the window to close | Uses SDL's ASCII debug font and requires a display |
+| `SoftwareTextRenderer` | `TextRenderer` | Blacks out a frame through an SDL software renderer, draws translated lines fitted to the frame, and returns the resulting `Frame` | Uses SDL's ASCII debug font; no window |
 
 `ImageFramesSourcer` depends on the `image` crate with only the PNG feature enabled. `SdlThreeTextRenderer` uses vendored SDL3 3.4.20 libraries under `third-party/sdl3`; `build.rs` adds the import library path and copies `SDL3.dll` next to test and binary outputs.
 
@@ -359,6 +370,7 @@ Coverage includes:
 - context-aware block translation and line distribution for wide multi-line dialogs,
 - debug text wrapping, vertical stacking, and glyph scaling to fit frame bounds,
 - Windows screenshot BGRA to opaque RGBA conversion,
+- software text rendering into a new frame without mutating the source frame,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
 - full Shadowrun intro, street, and hospital dialog detection to OCR to translation to block-rendering pipelines,
 - SDL preview timeout behavior,
@@ -418,9 +430,10 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - OCR and translation use local Python models with model-dependent quality.
 - `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and fit translated text to the frame by wrapping and scaling.
-- Both SDL applications block their event loop while processing a dropped image.
+- The SDL applications and `ScreenshotTranslator` block their event loop while processing an image or capture.
 - Only PNG input is supported.
 - `WindowsScreenshoter` is Windows-only, identifies sources by visible window title, and relies on GDI capture, so windows that reject `PrintWindow` may fall back to on-screen pixels.
+- `ScreenshotTranslator` requires a C++ compiler for `imgui-sys`; on the GNU toolchain the build script copies the MinGW C++ runtime DLLs next to the binary.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus frame detector colors.
 - `ProceduralFramesDetectorSourcer` matches the configured background and text color arrays within fixed channel tolerances and uses fixed detection thresholds.

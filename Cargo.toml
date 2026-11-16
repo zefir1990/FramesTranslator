@@ -15,8 +15,16 @@ path = "src/main.rs"
 name = "NeuralNetworkFramesDetectorSourcerTestApplication"
 path = "src/bin/neural_network_frames_detector_sourcer_test_application.rs"
 
+[[bin]]
+name = "ScreenshotTranslator"
+path = "src/bin/screenshot_translator/main.rs"
+
+[build-dependencies]
+cc = "1"
+
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+imgui = "0.12"
 json5 = "1"
 sdl3 = "0.22"
 serde = { version = "1", features = ["derive"] }
