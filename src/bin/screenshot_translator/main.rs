@@ -7,7 +7,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use frames_translator::FactoryError;
 use frames_translator::application_config::ApplicationConfig;
@@ -39,6 +39,7 @@ const WINDOW_HEIGHT: u32 = 900;
 const CLEAR_COLOR: Color = Color::RGB(24, 24, 24);
 const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
 const MAXIMUM_IMAGE_SCALE: f32 = 4.0;
+const CAPTURE_INTERVAL: Duration = Duration::from_secs(5);
 
 fn main() -> Result<(), ApplicationError> {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(APPLICATION_CONFIG_PATH);
@@ -88,6 +89,7 @@ fn run(
                 _ => platform.handle_event(&mut imgui_context, &event),
             }
         }
+        application.poll_capture();
         platform.prepare_frame(&mut imgui_context, &window);
         let ui = imgui_context.frame();
         application.draw_ui(ui);
@@ -97,6 +99,7 @@ fn run(
         canvas.present();
         if let Some(source) = application.take_pending_source() {
             translate_and_show(&mut application, &mut renderer, &source);
+            application.finish_capture_cycle();
         }
         thread::sleep(EVENT_POLL_DELAY);
     }
@@ -128,6 +131,54 @@ struct TranslationResult {
     detected_frame_count: usize,
 }
 
+struct CaptureSchedule {
+    interval: Duration,
+    next_capture: Option<Instant>,
+}
+
+impl CaptureSchedule {
+    const fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            next_capture: None,
+        }
+    }
+
+    fn start(&mut self, now: Instant) {
+        self.next_capture = Some(now);
+    }
+
+    fn stop(&mut self) {
+        self.next_capture = None;
+    }
+
+    const fn is_active(&self) -> bool {
+        self.next_capture.is_some()
+    }
+
+    fn is_due(&self, now: Instant) -> bool {
+        self.next_capture
+            .is_some_and(|next_capture| now >= next_capture)
+    }
+
+    fn postpone(&mut self, now: Instant) {
+        if self.is_active() {
+            self.next_capture = Some(now + self.interval);
+        }
+    }
+
+    fn seconds_until(&self, now: Instant) -> u64 {
+        self.next_capture
+            .map(|next_capture| {
+                next_capture
+                    .saturating_duration_since(now)
+                    .as_secs_f32()
+                    .ceil() as u64
+            })
+            .unwrap_or(0)
+    }
+}
+
 struct ScreenshotTranslatorApplication {
     screenshoter: WindowsScreenshoter,
     application_config: ApplicationConfig,
@@ -135,6 +186,7 @@ struct ScreenshotTranslatorApplication {
     sources: Vec<String>,
     selected_source: Option<String>,
     pending_source: Option<String>,
+    capture_schedule: CaptureSchedule,
     status: String,
     result: Option<TranslationResult>,
     result_texture: Option<TextureId>,
@@ -149,7 +201,8 @@ impl ScreenshotTranslatorApplication {
             sources: Vec::new(),
             selected_source: None,
             pending_source: None,
-            status: "Select a window and press Translate.".to_owned(),
+            capture_schedule: CaptureSchedule::new(CAPTURE_INTERVAL),
+            status: "Select a window and press Start Capture.".to_owned(),
             result: None,
             result_texture: None,
         };
@@ -192,15 +245,26 @@ impl ScreenshotTranslatorApplication {
                     ui.text_disabled("No screenshot sources found.");
                 }
                 ui.separator();
-                let can_translate = self.selected_source.is_some() && self.pending_source.is_none();
-                ui.disabled(!can_translate, || {
-                    if ui.button("Translate selected window") {
-                        self.pending_source = self.selected_source.clone();
-                        self.status = "Capturing and translating...".to_owned();
+                if self.capture_schedule.is_active() {
+                    if ui.button("Stop Capture") {
+                        self.stop_capture();
                     }
-                });
+                } else {
+                    let can_start = self.selected_source.is_some();
+                    ui.disabled(!can_start, || {
+                        if ui.button("Start Capture") {
+                            self.start_capture();
+                        }
+                    });
+                }
                 ui.separator();
                 ui.text_wrapped(&self.status);
+                if self.capture_schedule.is_active() {
+                    ui.text(format!(
+                        "Capture active: next capture in {}s.",
+                        self.capture_schedule.seconds_until(Instant::now())
+                    ));
+                }
             });
         ui.window("Translation result")
             .position([440.0, 10.0], Condition::FirstUseEver)
@@ -247,6 +311,36 @@ impl ScreenshotTranslatorApplication {
                 self.status = format!("Failed to list windows: {error}");
             }
         }
+    }
+
+    fn start_capture(&mut self) {
+        self.capture_schedule.start(Instant::now());
+        self.status = "Starting capture...".to_owned();
+    }
+
+    fn stop_capture(&mut self) {
+        self.capture_schedule.stop();
+        self.pending_source = None;
+        self.status = "Capture stopped.".to_owned();
+    }
+
+    fn poll_capture(&mut self) {
+        if !self.capture_schedule.is_active() || self.pending_source.is_some() {
+            return;
+        }
+        if !self.capture_schedule.is_due(Instant::now()) {
+            return;
+        }
+        let Some(source) = self.selected_source.clone() else {
+            self.stop_capture();
+            return;
+        };
+        self.pending_source = Some(source);
+        self.status = "Capturing and translating...".to_owned();
+    }
+
+    fn finish_capture_cycle(&mut self) {
+        self.capture_schedule.postpone(Instant::now());
     }
 
     fn take_pending_source(&mut self) -> Option<String> {
@@ -436,5 +530,35 @@ impl From<RenderingError> for ApplicationError {
 impl From<RendererError> for ApplicationError {
     fn from(error: RendererError) -> Self {
         Self::Renderer(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schedules_the_next_capture_after_the_last_translation() {
+        let started_at = Instant::now();
+        let mut schedule = CaptureSchedule::new(CAPTURE_INTERVAL);
+        schedule.start(started_at);
+        assert!(schedule.is_active());
+        assert!(schedule.is_due(started_at));
+        let finished_at = started_at + Duration::from_secs(2);
+        schedule.postpone(finished_at);
+        assert!(!schedule.is_due(finished_at + Duration::from_secs(4)));
+        assert!(schedule.is_due(finished_at + CAPTURE_INTERVAL));
+        assert_eq!(schedule.seconds_until(finished_at), 5);
+    }
+
+    #[test]
+    fn stops_scheduling_captures() {
+        let now = Instant::now();
+        let mut schedule = CaptureSchedule::new(CAPTURE_INTERVAL);
+        schedule.start(now);
+        schedule.stop();
+        assert!(!schedule.is_active());
+        assert!(!schedule.is_due(now + CAPTURE_INTERVAL));
+        assert_eq!(schedule.seconds_until(now), 0);
     }
 }

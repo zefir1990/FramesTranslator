@@ -2,7 +2,7 @@
 
 ## Repository
 
-FramesTranslator is a Rust image translation pipeline with interactive SDL and imgui applications. The pipeline contracts, domain models, configuration, implementation factory, local backends, and integration tests are implemented; `FramesTranslator` processes dropped images through detection, OCR, translation, and rendering, `NeuralNetworkFramesDetectorSourcerTestApplication` shows only detected frame bounds, and `ScreenshotTranslator` captures a selected Windows window and translates it through the same pipeline.
+FramesTranslator is a Rust image translation pipeline with interactive SDL and imgui applications. The pipeline contracts, domain models, configuration, implementation factory, local backends, and integration tests are implemented; `FramesTranslator` processes dropped images through detection, OCR, translation, and rendering, `NeuralNetworkFramesDetectorSourcerTestApplication` shows only detected frame bounds, and `ScreenshotTranslator` captures a selected Windows window periodically, waiting 5 seconds after each translation, and translates it through the same pipeline.
 
 ## Stack
 

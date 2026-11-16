@@ -99,11 +99,11 @@ cargo run --bin NeuralNetworkFramesDetectorSourcerTestApplication -- test-case/S
 `ScreenshotTranslator` is an imgui application that translates a live Windows window:
 
 1. Lists visible top-level windows through `WindowsScreenshoter`.
-2. Captures the selected window when **Translate selected window** is pressed.
-3. Runs frame detection, Manga OCR, Argos translation, and `SoftwareTextRenderer` on the capture.
+2. Starts and stops periodic capture with **Start Capture** and **Stop Capture**.
+3. Captures the selected window, runs frame detection, Manga OCR, Argos translation, and `SoftwareTextRenderer`, then waits 5 seconds after the translation finishes before capturing again.
 4. Renders the translated frames back into the screenshot and displays the result in the imgui window.
 
-A window title can be passed as the first argument to capture and translate it immediately:
+A window title can be passed as the first argument to capture and translate it once immediately; periodic capture then starts with **Start Capture**:
 
 ```powershell
 cargo run --bin ScreenshotTranslator -- "Source Image Viewer"
