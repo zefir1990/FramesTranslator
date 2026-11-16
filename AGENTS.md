@@ -170,7 +170,7 @@ When adding an implementation:
 - OCR and translation use local Python models with model-dependent quality; wide dialog frames with at least three lines are translated as one block, while menu frames translate each line separately.
 - `MangaFramesOCR` line segmentation assumes a dominant background luminance; frames with large mixed-luminance regions may merge lines.
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer`, `SoftwareTextRenderer`, and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
-- The SDL applications process each dropped image synchronously, and `ScreenshotTranslator` processes each capture synchronously, so the window does not repaint during detection, OCR, or translation.
+- The SDL applications process each dropped image synchronously, so their windows do not repaint during detection, OCR, or translation. `ScreenshotTranslator` runs capture and translation on a worker thread and stays responsive; cancellation is cooperative, so an in-flight OCR or translation call may finish before the worker exits.
 - `ScreenshotTranslator` requires a C++ compiler for `imgui-sys` and always uses `SoftwareTextRenderer` for its final image.
 - PNG only.
 - `WindowsScreenshoter` is Windows-only and identifies screenshot sources by visible window title.

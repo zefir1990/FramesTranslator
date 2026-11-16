@@ -6,6 +6,9 @@ use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -38,8 +41,12 @@ const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
 const CLEAR_COLOR: Color = Color::RGB(24, 24, 24);
 const EVENT_POLL_DELAY: Duration = Duration::from_millis(16);
+const WORKER_POLL_DELAY: Duration = Duration::from_millis(50);
 const MAXIMUM_IMAGE_SCALE: f32 = 4.0;
 const CAPTURE_INTERVAL: Duration = Duration::from_secs(5);
+const SPINNER_INTERVAL: Duration = Duration::from_millis(120);
+const SPINNER_FRAMES: [&str; 4] = ["|", "/", "-", "\\"];
+const CAPTURE_INDICATOR_COLOR: [f32; 4] = [0.4, 1.0, 0.4, 1.0];
 
 fn main() -> Result<(), ApplicationError> {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(APPLICATION_CONFIG_PATH);
@@ -89,7 +96,7 @@ fn run(
                 _ => platform.handle_event(&mut imgui_context, &event),
             }
         }
-        application.poll_capture();
+        application.poll_worker();
         platform.prepare_frame(&mut imgui_context, &window);
         let ui = imgui_context.frame();
         application.draw_ui(ui);
@@ -97,25 +104,15 @@ fn run(
         canvas.clear();
         renderer.render(imgui_context.render(), &mut canvas)?;
         canvas.present();
-        if let Some(source) = application.take_pending_source() {
-            translate_and_show(&mut application, &mut renderer, &source);
-            application.finish_capture_cycle();
+        if let Some(result) = application.take_completed_result() {
+            match renderer.set_image(&result.image) {
+                Ok(texture_identifier) => application.set_result(result, texture_identifier),
+                Err(error) => {
+                    application.apply_error(format!("Failed to show the result: {error}"))
+                }
+            }
         }
         thread::sleep(EVENT_POLL_DELAY);
-    }
-}
-
-fn translate_and_show<Target>(
-    application: &mut ScreenshotTranslatorApplication,
-    renderer: &mut Renderer<'_, Target>,
-    source: &str,
-) {
-    match application.translate_screenshot(source) {
-        Ok(result) => match renderer.set_image(&result.image) {
-            Ok(texture_identifier) => application.apply_result(result, texture_identifier),
-            Err(error) => application.apply_error(format!("Failed to show the result: {error}")),
-        },
-        Err(error) => application.apply_error(format!("Translation failed: {error}")),
     }
 }
 
@@ -124,6 +121,17 @@ struct TranslationPipeline {
     frames_ocr: Box<dyn FramesOCR>,
     text_translator: Box<dyn TextTranslator>,
     text_renderer: SoftwareTextRenderer,
+}
+
+impl TranslationPipeline {
+    fn open(application_config: &ApplicationConfig) -> Result<Self, ApplicationError> {
+        Ok(Self {
+            frames_detector: create_frames_detector_sourcer(application_config)?,
+            frames_ocr: create_frames_ocr(application_config)?,
+            text_translator: create_text_translator(application_config)?,
+            text_renderer: SoftwareTextRenderer::new(),
+        })
+    }
 }
 
 struct TranslationResult {
@@ -148,46 +156,48 @@ impl CaptureSchedule {
         self.next_capture = Some(now);
     }
 
-    fn stop(&mut self) {
-        self.next_capture = None;
-    }
-
-    const fn is_active(&self) -> bool {
-        self.next_capture.is_some()
-    }
-
     fn is_due(&self, now: Instant) -> bool {
         self.next_capture
             .is_some_and(|next_capture| now >= next_capture)
     }
 
     fn postpone(&mut self, now: Instant) {
-        if self.is_active() {
-            self.next_capture = Some(now + self.interval);
-        }
+        self.next_capture = Some(now + self.interval);
     }
 
-    fn seconds_until(&self, now: Instant) -> u64 {
+    const fn next_capture(&self) -> Option<Instant> {
         self.next_capture
-            .map(|next_capture| {
-                next_capture
-                    .saturating_duration_since(now)
-                    .as_secs_f32()
-                    .ceil() as u64
-            })
-            .unwrap_or(0)
+    }
+}
+
+enum WorkerMessage {
+    CycleStarted,
+    CycleFinished(Result<TranslationResult, String>),
+    Waiting { next_capture: Instant },
+    Failed(String),
+}
+
+struct CaptureWorker {
+    cancellation: Arc<AtomicBool>,
+    receiver: Receiver<WorkerMessage>,
+}
+
+impl Drop for CaptureWorker {
+    fn drop(&mut self) {
+        self.cancellation.store(true, Ordering::Relaxed);
     }
 }
 
 struct ScreenshotTranslatorApplication {
-    screenshoter: WindowsScreenshoter,
     application_config: ApplicationConfig,
-    pipeline: Option<TranslationPipeline>,
     sources: Vec<String>,
     selected_source: Option<String>,
-    pending_source: Option<String>,
-    capture_schedule: CaptureSchedule,
+    worker: Option<CaptureWorker>,
+    processing: bool,
+    spinner_started: Instant,
+    next_capture: Option<Instant>,
     status: String,
+    completed_result: Option<TranslationResult>,
     result: Option<TranslationResult>,
     result_texture: Option<TextureId>,
 }
@@ -195,14 +205,15 @@ struct ScreenshotTranslatorApplication {
 impl ScreenshotTranslatorApplication {
     fn new(application_config: ApplicationConfig, initial_source: Option<String>) -> Self {
         let mut application = Self {
-            screenshoter: WindowsScreenshoter::new(),
             application_config,
-            pipeline: None,
             sources: Vec::new(),
             selected_source: None,
-            pending_source: None,
-            capture_schedule: CaptureSchedule::new(CAPTURE_INTERVAL),
+            worker: None,
+            processing: false,
+            spinner_started: Instant::now(),
+            next_capture: None,
             status: "Select a window and press Start Capture.".to_owned(),
+            completed_result: None,
             result: None,
             result_texture: None,
         };
@@ -210,9 +221,8 @@ impl ScreenshotTranslatorApplication {
         if let Some(source) = initial_source
             && application.sources.contains(&source)
         {
-            application.selected_source = Some(source.clone());
-            application.pending_source = Some(source);
-            application.status = "Capturing and translating...".to_owned();
+            application.selected_source = Some(source);
+            application.start_capture();
         }
         application
     }
@@ -221,6 +231,7 @@ impl ScreenshotTranslatorApplication {
         let display_size = ui.io().display_size;
         let panel_height = (display_size[1] - 20.0).max(200.0);
         let result_width = (display_size[0] - 450.0).max(300.0);
+        let capture_active = self.worker.is_some();
         ui.window("Screenshot sources")
             .position([10.0, 10.0], Condition::FirstUseEver)
             .size([420.0, panel_height], Condition::FirstUseEver)
@@ -231,21 +242,23 @@ impl ScreenshotTranslatorApplication {
                 ui.same_line();
                 ui.text(format!("{} found", self.sources.len()));
                 ui.separator();
-                for source in &self.sources {
-                    let is_selected = self.selected_source.as_deref() == Some(source.as_str());
-                    if ui
-                        .selectable_config(source.as_str())
-                        .selected(is_selected)
-                        .build()
-                    {
-                        self.selected_source = Some(source.clone());
+                ui.disabled(capture_active, || {
+                    for source in &self.sources {
+                        let is_selected = self.selected_source.as_deref() == Some(source.as_str());
+                        if ui
+                            .selectable_config(source.as_str())
+                            .selected(is_selected)
+                            .build()
+                        {
+                            self.selected_source = Some(source.clone());
+                        }
                     }
-                }
+                });
                 if self.sources.is_empty() {
                     ui.text_disabled("No screenshot sources found.");
                 }
                 ui.separator();
-                if self.capture_schedule.is_active() {
+                if capture_active {
                     if ui.button("Stop Capture") {
                         self.stop_capture();
                     }
@@ -258,18 +271,37 @@ impl ScreenshotTranslatorApplication {
                     });
                 }
                 ui.separator();
-                ui.text_wrapped(&self.status);
-                if self.capture_schedule.is_active() {
-                    ui.text(format!(
-                        "Capture active: next capture in {}s.",
-                        self.capture_schedule.seconds_until(Instant::now())
-                    ));
-                }
+                self.draw_capture_status(ui);
             });
         ui.window("Translation result")
             .position([440.0, 10.0], Condition::FirstUseEver)
             .size([result_width, panel_height], Condition::FirstUseEver)
             .build(|| self.draw_result(ui));
+    }
+
+    fn draw_capture_status(&self, ui: &Ui) {
+        if self.worker.is_none() {
+            ui.text_wrapped(&self.status);
+            return;
+        }
+        let spinner = spinner_frame(self.spinner_started);
+        if self.processing {
+            ui.text_colored(
+                CAPTURE_INDICATOR_COLOR,
+                format!("{spinner} Capturing and translating..."),
+            );
+            return;
+        }
+        ui.text_wrapped(&self.status);
+        if let Some(next_capture) = self.next_capture {
+            ui.text_colored(
+                CAPTURE_INDICATOR_COLOR,
+                format!(
+                    "{spinner} Capture active: next capture in {}s.",
+                    seconds_until(next_capture, Instant::now())
+                ),
+            );
+        }
     }
 
     fn draw_result(&self, ui: &Ui) {
@@ -292,7 +324,7 @@ impl ScreenshotTranslatorApplication {
     }
 
     fn refresh_sources(&mut self) {
-        match self.screenshoter.sources() {
+        match WindowsScreenshoter::new().sources() {
             Ok(sources) => {
                 if let Some(selected_source) = &self.selected_source
                     && !sources.contains(selected_source)
@@ -314,44 +346,81 @@ impl ScreenshotTranslatorApplication {
     }
 
     fn start_capture(&mut self) {
-        self.capture_schedule.start(Instant::now());
+        self.stop_capture();
+        let Some(source) = self.selected_source.clone() else {
+            return;
+        };
+        let (sender, receiver) = mpsc::channel();
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let worker_cancellation = Arc::clone(&cancellation);
+        let application_config = self.application_config.clone();
+        thread::spawn(move || {
+            run_capture_worker(application_config, source, sender, worker_cancellation);
+        });
+        self.worker = Some(CaptureWorker {
+            cancellation,
+            receiver,
+        });
+        self.processing = true;
+        self.spinner_started = Instant::now();
+        self.next_capture = None;
         self.status = "Starting capture...".to_owned();
     }
 
     fn stop_capture(&mut self) {
-        self.capture_schedule.stop();
-        self.pending_source = None;
+        self.worker = None;
+        self.processing = false;
+        self.next_capture = None;
         self.status = "Capture stopped.".to_owned();
     }
 
-    fn poll_capture(&mut self) {
-        if !self.capture_schedule.is_active() || self.pending_source.is_some() {
-            return;
-        }
-        if !self.capture_schedule.is_due(Instant::now()) {
-            return;
-        }
-        let Some(source) = self.selected_source.clone() else {
-            self.stop_capture();
-            return;
+    fn poll_worker(&mut self) {
+        let messages = match self.worker.as_ref() {
+            Some(worker) => worker.receiver.try_iter().collect::<Vec<_>>(),
+            None => return,
         };
-        self.pending_source = Some(source);
-        self.status = "Capturing and translating...".to_owned();
+        let mut worker_failed = false;
+        for message in messages {
+            match message {
+                WorkerMessage::CycleStarted => {
+                    self.processing = true;
+                    self.spinner_started = Instant::now();
+                    self.next_capture = None;
+                    self.status = "Capturing and translating...".to_owned();
+                }
+                WorkerMessage::CycleFinished(Ok(result)) => {
+                    self.processing = false;
+                    self.status = format!(
+                        "Detected {} frame(s) in the selected window.",
+                        result.detected_frame_count
+                    );
+                    self.completed_result = Some(result);
+                }
+                WorkerMessage::CycleFinished(Err(message)) => {
+                    self.processing = false;
+                    self.status = format!("Translation failed: {message}");
+                }
+                WorkerMessage::Waiting { next_capture } => {
+                    self.next_capture = Some(next_capture);
+                }
+                WorkerMessage::Failed(message) => {
+                    self.processing = false;
+                    self.next_capture = None;
+                    self.status = format!("Capture failed: {message}");
+                    worker_failed = true;
+                }
+            }
+        }
+        if worker_failed {
+            self.worker = None;
+        }
     }
 
-    fn finish_capture_cycle(&mut self) {
-        self.capture_schedule.postpone(Instant::now());
+    fn take_completed_result(&mut self) -> Option<TranslationResult> {
+        self.completed_result.take()
     }
 
-    fn take_pending_source(&mut self) -> Option<String> {
-        self.pending_source.take()
-    }
-
-    fn apply_result(&mut self, result: TranslationResult, texture_identifier: TextureId) {
-        self.status = format!(
-            "Detected {} frame(s) in the selected window.",
-            result.detected_frame_count
-        );
+    fn set_result(&mut self, result: TranslationResult, texture_identifier: TextureId) {
         self.result = Some(result);
         self.result_texture = Some(texture_identifier);
     }
@@ -359,56 +428,124 @@ impl ScreenshotTranslatorApplication {
     fn apply_error(&mut self, message: String) {
         self.status = message;
     }
+}
 
-    fn translate_screenshot(
-        &mut self,
-        source: &str,
-    ) -> Result<TranslationResult, ApplicationError> {
-        let captured_frame = self.screenshoter.screenshot(source)?;
-        let mut image = frame_to_image(&captured_frame)?;
-        let pipeline = self.pipeline()?;
-        let detected_frames = pipeline.frames_detector.detect(&image)?;
-        let detected_frame_count = detected_frames.len();
-        for detected_frame in detected_frames {
-            let regions = pipeline.frames_ocr.recognize(detected_frame.frame())?;
-            let translated_texts = translate_frame_regions(
-                detected_frame.frame(),
-                &regions,
-                pipeline.text_translator.as_mut(),
-            )?;
-            let rendered_frame = pipeline
-                .text_renderer
-                .render(detected_frame.frame(), &translated_texts)?;
-            let rendered_image = frame_to_image(&rendered_frame)?;
-            let bounds = detected_frame.bounds();
-            image::imageops::overlay(
-                &mut image,
-                &rendered_image,
-                i64::from(bounds.x()),
-                i64::from(bounds.y()),
-            );
-        }
-        Ok(TranslationResult {
-            image,
-            detected_frame_count,
-        })
+fn run_capture_worker(
+    application_config: ApplicationConfig,
+    source: String,
+    sender: Sender<WorkerMessage>,
+    cancellation: Arc<AtomicBool>,
+) {
+    if cancellation.load(Ordering::Relaxed) {
+        return;
     }
-
-    fn pipeline(&mut self) -> Result<&mut TranslationPipeline, ApplicationError> {
-        if self.pipeline.is_none() {
-            let frames_detector = create_frames_detector_sourcer(&self.application_config)?;
-            let frames_ocr = create_frames_ocr(&self.application_config)?;
-            let text_translator = create_text_translator(&self.application_config)?;
-            self.pipeline = Some(TranslationPipeline {
-                frames_detector,
-                frames_ocr,
-                text_translator,
-                text_renderer: SoftwareTextRenderer::new(),
-            });
+    let mut pipeline = match TranslationPipeline::open(&application_config) {
+        Ok(pipeline) => pipeline,
+        Err(error) => {
+            let _ = sender.send(WorkerMessage::Failed(error.to_string()));
+            return;
         }
-        self.pipeline
-            .as_mut()
-            .ok_or(ApplicationError::MissingPipeline)
+    };
+    let mut schedule = CaptureSchedule::new(CAPTURE_INTERVAL);
+    schedule.start(Instant::now());
+    loop {
+        if !wait_for_capture(&schedule, &cancellation) {
+            return;
+        }
+        if sender.send(WorkerMessage::CycleStarted).is_err() {
+            return;
+        }
+        match translate_capture(&mut pipeline, &source, &cancellation) {
+            Ok(result) => {
+                if sender
+                    .send(WorkerMessage::CycleFinished(Ok(result)))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            Err(ApplicationError::Cancelled) => return,
+            Err(error) => {
+                if sender
+                    .send(WorkerMessage::CycleFinished(Err(error.to_string())))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+        if cancellation.load(Ordering::Relaxed) {
+            return;
+        }
+        schedule.postpone(Instant::now());
+        if let Some(next_capture) = schedule.next_capture()
+            && sender
+                .send(WorkerMessage::Waiting { next_capture })
+                .is_err()
+        {
+            return;
+        }
+    }
+}
+
+fn wait_for_capture(schedule: &CaptureSchedule, cancellation: &AtomicBool) -> bool {
+    loop {
+        if cancellation.load(Ordering::Relaxed) {
+            return false;
+        }
+        if schedule.is_due(Instant::now()) {
+            return true;
+        }
+        thread::sleep(WORKER_POLL_DELAY);
+    }
+}
+
+fn translate_capture(
+    pipeline: &mut TranslationPipeline,
+    source: &str,
+    cancellation: &AtomicBool,
+) -> Result<TranslationResult, ApplicationError> {
+    ensure_not_cancelled(cancellation)?;
+    let captured_frame = WindowsScreenshoter::new().screenshot(source)?;
+    ensure_not_cancelled(cancellation)?;
+    let mut image = frame_to_image(&captured_frame)?;
+    let detected_frames = pipeline.frames_detector.detect(&image)?;
+    ensure_not_cancelled(cancellation)?;
+    let detected_frame_count = detected_frames.len();
+    for detected_frame in detected_frames {
+        ensure_not_cancelled(cancellation)?;
+        let regions = pipeline.frames_ocr.recognize(detected_frame.frame())?;
+        ensure_not_cancelled(cancellation)?;
+        let translated_texts = translate_frame_regions(
+            detected_frame.frame(),
+            &regions,
+            pipeline.text_translator.as_mut(),
+        )?;
+        ensure_not_cancelled(cancellation)?;
+        let rendered_frame = pipeline
+            .text_renderer
+            .render(detected_frame.frame(), &translated_texts)?;
+        ensure_not_cancelled(cancellation)?;
+        let rendered_image = frame_to_image(&rendered_frame)?;
+        let bounds = detected_frame.bounds();
+        image::imageops::overlay(
+            &mut image,
+            &rendered_image,
+            i64::from(bounds.x()),
+            i64::from(bounds.y()),
+        );
+    }
+    Ok(TranslationResult {
+        image,
+        detected_frame_count,
+    })
+}
+
+fn ensure_not_cancelled(cancellation: &AtomicBool) -> Result<(), ApplicationError> {
+    if cancellation.load(Ordering::Relaxed) {
+        Err(ApplicationError::Cancelled)
+    } else {
+        Ok(())
     }
 }
 
@@ -419,6 +556,17 @@ fn frame_to_image(frame: &Frame) -> Result<RgbaImage, ApplicationError> {
             height: frame.height(),
         },
     )
+}
+
+fn spinner_frame(started_at: Instant) -> &'static str {
+    let frame_index =
+        usize::try_from(started_at.elapsed().as_millis() / SPINNER_INTERVAL.as_millis())
+            .unwrap_or(0);
+    SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]
+}
+
+fn seconds_until(instant: Instant, now: Instant) -> u64 {
+    instant.saturating_duration_since(now).as_secs_f32().ceil() as u64
 }
 
 fn sdl_failure(error: impl ToString) -> ApplicationError {
@@ -437,7 +585,7 @@ enum ApplicationError {
     Rendering(RenderingError),
     Renderer(RendererError),
     InvalidFrame { width: u32, height: u32 },
-    MissingPipeline,
+    Cancelled,
     Sdl(String),
 }
 
@@ -466,7 +614,7 @@ impl Display for ApplicationError {
                     "captured frame {width}x{height} has an invalid pixel buffer"
                 )
             }
-            Self::MissingPipeline => write!(formatter, "translation pipeline is unavailable"),
+            Self::Cancelled => write!(formatter, "capture was cancelled"),
             Self::Sdl(message) => write!(formatter, "SDL error: {message}"),
         }
     }
@@ -483,10 +631,9 @@ impl Error for ApplicationError {
             Self::Translation(error) => Some(error),
             Self::Rendering(error) => Some(error),
             Self::Renderer(error) => Some(error),
-            Self::Configuration(_)
-            | Self::InvalidFrame { .. }
-            | Self::MissingPipeline
-            | Self::Sdl(_) => None,
+            Self::Configuration(_) | Self::InvalidFrame { .. } | Self::Cancelled | Self::Sdl(_) => {
+                None
+            }
         }
     }
 }
@@ -542,23 +689,29 @@ mod tests {
         let started_at = Instant::now();
         let mut schedule = CaptureSchedule::new(CAPTURE_INTERVAL);
         schedule.start(started_at);
-        assert!(schedule.is_active());
         assert!(schedule.is_due(started_at));
         let finished_at = started_at + Duration::from_secs(2);
         schedule.postpone(finished_at);
         assert!(!schedule.is_due(finished_at + Duration::from_secs(4)));
         assert!(schedule.is_due(finished_at + CAPTURE_INTERVAL));
-        assert_eq!(schedule.seconds_until(finished_at), 5);
+        assert_eq!(
+            schedule.next_capture(),
+            Some(finished_at + CAPTURE_INTERVAL)
+        );
+        assert_eq!(
+            seconds_until(finished_at + CAPTURE_INTERVAL, finished_at),
+            5
+        );
     }
 
     #[test]
-    fn stops_scheduling_captures() {
-        let now = Instant::now();
-        let mut schedule = CaptureSchedule::new(CAPTURE_INTERVAL);
-        schedule.start(now);
-        schedule.stop();
-        assert!(!schedule.is_active());
-        assert!(!schedule.is_due(now + CAPTURE_INTERVAL));
-        assert_eq!(schedule.seconds_until(now), 0);
+    fn reports_cancellation() {
+        let cancellation = AtomicBool::new(false);
+        assert!(ensure_not_cancelled(&cancellation).is_ok());
+        cancellation.store(true, Ordering::Relaxed);
+        assert!(matches!(
+            ensure_not_cancelled(&cancellation),
+            Err(ApplicationError::Cancelled)
+        ));
     }
 }

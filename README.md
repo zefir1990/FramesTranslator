@@ -100,16 +100,19 @@ cargo run --bin NeuralNetworkFramesDetectorSourcerTestApplication -- test-case/S
 
 1. Lists visible top-level windows through `WindowsScreenshoter`.
 2. Starts and stops periodic capture with **Start Capture** and **Stop Capture**.
-3. Captures the selected window, runs frame detection, Manga OCR, Argos translation, and `SoftwareTextRenderer`, then waits 5 seconds after the translation finishes before capturing again.
-4. Renders the translated frames back into the screenshot and displays the result in the imgui window.
+3. Captures and translates on a background worker thread, so the UI stays responsive and shows an animated capture indicator.
+4. Runs frame detection, Manga OCR, Argos translation, and `SoftwareTextRenderer`, then waits 5 seconds after the translation finishes before capturing again.
+5. Renders the translated frames back into the screenshot and displays the result in the imgui window.
 
-A window title can be passed as the first argument to capture and translate it once immediately; periodic capture then starts with **Start Capture**:
+A window title can be passed as the first argument to start capture mode for that window immediately:
 
 ```powershell
 cargo run --bin ScreenshotTranslator -- "Source Image Viewer"
 ```
 
 Building the imgui backend requires a C++ compiler for the Dear ImGui sources. With the GNU toolchain, `build.rs` copies the required MinGW runtime DLLs next to the executable. The SDL_Renderer imgui backend follows the MIT-licensed `imgui-sdl3-renderer` crate.
+
+Stop Capture cancels the worker cooperatively: the UI returns immediately, while a blocking OCR or translation call that is already running may finish before the worker thread exits.
 
 ## Library usage
 
