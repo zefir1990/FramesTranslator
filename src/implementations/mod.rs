@@ -9,6 +9,8 @@ mod procedural_frames_detector_sourcer;
 mod python_worker;
 mod sdl_three_text_renderer;
 mod synthetic_frames_sourcer;
+#[cfg(windows)]
+mod windows_screenshoter;
 
 pub use argos_text_translator::ArgosTextTranslator;
 pub use block_text_renderer::BlockTextRenderer;
@@ -20,3 +22,5 @@ pub use neural_network_frames_detector_sourcer::NeuralNetworkFramesDetectorSourc
 pub use procedural_frames_detector_sourcer::ProceduralFramesDetectorSourcer;
 pub use sdl_three_text_renderer::SdlThreeTextRenderer;
 pub use synthetic_frames_sourcer::SyntheticFramesSourcer;
+#[cfg(windows)]
+pub use windows_screenshoter::WindowsScreenshoter;

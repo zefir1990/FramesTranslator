@@ -31,10 +31,11 @@ Use `cargo check --all-targets` for a faster compile check when iterating. The c
 
 ## Architecture
 
-The pipeline has four object-safe traits:
+The pipeline has four object-safe traits plus an input acquisition contract:
 
 | Trait | File | Contract |
 | --- | --- | --- |
+| `Screenshoter` | `src/screenshoter.rs` | `sources(&self) -> Result<Vec<String>, ScreenshotError>` and `screenshot(&self, &str) -> Result<Frame, ScreenshotError>` |
 | `FramesSourcer` | `src/frames_sourcer.rs` | `next_frame(&mut self) -> Result<Option<Frame>, FrameSourceError>` |
 | `FramesOCR` | `src/frames_ocr.rs` | `recognize(&self, &Frame) -> Result<Vec<TextRegion>, RecognitionError>` |
 | `TextTranslator` | `src/text_translator.rs` | `translate(&mut self, &str) -> Result<String, TranslationError>` and default `translate_all` |
@@ -44,6 +45,7 @@ Supporting modules:
 
 - `src/frame.rs`: named, validated RGBA8 `Frame`; buffer length must be `width * height * 4`.
 - `src/frame_translation.rs`: context-aware dialog translation and distribution across original lines.
+- `src/screenshoter.rs`: abstract `Screenshoter` trait and `ScreenshotError` for live screenshot sources.
 - `src/frames_config.rs`: `FramesConfig` and `NamedRect` for named frame rectangles.
 - `src/tests_config.rs`: `TestsConfig` with a separate config struct per test.
 - `src/application_config.rs`: `ApplicationConfig` implementation selection with JSONC loading.
@@ -59,6 +61,7 @@ Supporting modules:
 - `src/implementations/neural_network_frames_detector_sourcer.rs`: local PyTorch frame detector adapter.
 - `src/implementations/manga_frames_ocr.rs`: persistent Manga OCR Python worker adapter.
 - `src/implementations/sdl_three_text_renderer.rs`: SDL3 window renderer.
+- `src/implementations/windows_screenshoter.rs`: Windows window enumeration and `PrintWindow` capture.
 - `build.rs`: copies the vendored SDL3 DLL into target directories.
 - `third-party/sdl3`: vendored SDL3 3.4.20 import library, DLL, and license.
 - `src/implementations/`: concrete backends.
@@ -107,6 +110,7 @@ The selected detector uses `test-case/Shadowrun_02.png` when constructed through
 | `ArgosTextTranslator` | Japanese to English translation through a persistent Argos Translate worker |
 | `BlockTextRenderer` | Fills translated region bounds with a fixed orange color |
 | `SdlThreeTextRenderer` | Shows the Shadowrun image and translated text fitted inside the detected frame in an SDL3 window until closed |
+| `WindowsScreenshoter` | Lists visible top-level Windows windows and captures a window into an RGBA frame through `PrintWindow`, with a `BitBlt` fallback |
 
 These are development and test backends, not production implementations.
 
@@ -162,6 +166,7 @@ When adding an implementation:
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and wrap and scale translated text to fit the frame.
 - The SDL applications process each dropped image synchronously, so the window does not repaint during detection, OCR, or translation.
 - PNG only.
+- `WindowsScreenshoter` is Windows-only and identifies screenshot sources by visible window title.
 - Synchronous, single-threaded processing.
 - All frames are processed fully in memory.
 

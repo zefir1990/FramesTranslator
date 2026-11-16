@@ -29,6 +29,7 @@ Core models:
 - `TextRegion` pairs recognized text with its bounds.
 - `TranslatedText` pairs a source region with translated text.
 - `frame_translation` translates wide multi-line dialogs as one block and splits the result back across the original lines.
+- `Screenshoter` lists selectable screenshot sources and captures one source as an RGBA `Frame` ready for frame detection and OCR.
 
 ## Implementations
 
@@ -44,8 +45,9 @@ Core models:
 | `TextTranslator` | `ArgosTextTranslator` | Translates Japanese to English through Argos Translate. |
 | `TextRenderer` | `BlockTextRenderer` | Paints translated regions with a fixed color. |
 | `TextRenderer` | `SdlThreeTextRenderer` | Displays the Shadowrun image with translated text in an SDL3 window. |
+| `Screenshoter` | `WindowsScreenshoter` | Lists visible top-level Windows windows and captures the selected window as an RGBA frame. |
 
-`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use. `SdlThreeTextRenderer` displays results in an SDL3 window until the user closes it.
+`FixtureFramesOCR`, `DictionaryTextTranslator`, and `BlockTextRenderer` are deterministic test backends, not production OCR, machine translation, or font rendering. `MangaFramesOCR` and `ArgosTextTranslator` run Python packages through `.venv`; their models are loaded on first use. `SdlThreeTextRenderer` displays results in an SDL3 window until the user closes it. `WindowsScreenshoter` is available on Windows only; it captures through `PrintWindow` and falls back to `BitBlt` when a window does not support full-content printing.
 
 ## Configuration
 
@@ -138,6 +140,7 @@ src/
   frames_ocr.rs                OCR trait and error
   frames_sourcer.rs            Frame source trait and error
   main.rs                      Drag-and-drop SDL application entry point
+  screenshoter.rs              Screenshot source trait and error
   sdl_frame_viewer.rs          Shared SDL window, frame tinting, and counter
   sdl_image_translator.rs      FramesTranslator scene builder and error type
   bin/

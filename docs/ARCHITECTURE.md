@@ -48,6 +48,7 @@ flowchart LR
 | `src/text_region.rs` | `Bounds`, `TextRegion`, and `TranslatedText` |
 | `src/debug_text.rs` | Debug-font text wrapping, fitting, and drawing shared by renderers |
 | `src/frames_sourcer.rs` | `FramesSourcer` contract and `FrameSourceError` |
+| `src/screenshoter.rs` | `Screenshoter` contract and `ScreenshotError` |
 | `src/frames_ocr.rs` | `FramesOCR` contract and `RecognitionError` |
 | `src/text_translator.rs` | `TextTranslator` contract and `TranslationError` |
 | `src/text_renderer.rs` | `TextRenderer` contract and `RenderingError` |
@@ -94,6 +95,7 @@ The type is immutable through its public read-only accessors. Renderers copy the
 | Contract | Method | Ownership | Termination |
 | --- | --- | --- | --- |
 | `FramesSourcer` | `next_frame(&mut self) -> Result<Option<Frame>, FrameSourceError>` | Mutable source, owned frame | `None` |
+| `Screenshoter` | `sources(&self) -> Result<Vec<String>, ScreenshotError>` and `screenshot(&self, &str) -> Result<Frame, ScreenshotError>` | Shared capturer, owned frame | Selectable source names |
 | `FramesOCR` | `recognize(&self, &Frame) -> Result<Vec<TextRegion>, RecognitionError>` | Shared frame | Empty region list |
 | `TextTranslator` | `translate(&mut self, &str) -> Result<String, TranslationError>` | Mutable translator | Error for unknown text |
 | `TextRenderer` | `render(&self, &Frame, &[TranslatedText]) -> Result<Frame, RenderingError>` | Shared input, new frame | Returns a new frame |
@@ -110,7 +112,9 @@ Concrete detectors implement both `FramesSourcer` and `FramesDetectorSourcer`. T
 
 The translator takes `&mut self` to allow stateful implementations such as caches or sessions. OCR and rendering take `&self` because they are modeled as read-only operations over their inputs.
 
-All four traits are object-safe, allowing the factory and application to hold `Box<dyn Trait>` values.
+`Screenshoter` acquires frames from live windows instead of files. `sources` returns the selectable source names, and `screenshot` captures the named source as an RGBA `Frame` that can be passed to `FramesOCR` directly or converted to an `RgbaImage` for `FramesDetectorSourcer::detect`. It is an input acquisition contract rather than one of the four pipeline stages.
+
+All contracts are object-safe, allowing the factory and application to hold `Box<dyn Trait>` values.
 
 ## Data flow
 
@@ -276,6 +280,7 @@ The display scale is chosen to fit `1280x900` while preserving aspect ratio, cap
 | `ProceduralFramesDetectorSourcer` | `FramesSourcer` | Finds connected background-color components that contain text-color pixels and extracts each component as a frame | Fixed color tolerances and size and density thresholds |
 | `NeuralNetworkFramesDetectorSourcer` | `FramesSourcer` | Proposes dominant-color regions and validates them with a local PyTorch structural classifier | Retrains per worker start; needs local PyTorch |
 | `SyntheticFramesSourcer` | `FramesSourcer` | Yields two fixed `32x24` frames and then `None` | In-memory test data |
+| `WindowsScreenshoter` | `Screenshoter` | Enumerates visible top-level Windows windows as title sources and captures a window into an RGBA frame through `PrintWindow`, with a `BitBlt` fallback | Windows only, captures window chrome and content together, DPI-unaware |
 | `FixtureFramesOCR` | `FramesOCR` | Returns two fixed text regions | Does not inspect the frame |
 | `MangaFramesOCR` | `FramesOCR` | Splits frames into detected text lines with horizontal ink padding and OCRs each line through a persistent `manga-ocr` Python worker | Japanese-focused model; requires `.venv`; background-relative line detection |
 | `DictionaryTextTranslator` | `TextTranslator` | Maps two fixed source strings to translated strings | Exact-match dictionary only |
@@ -318,6 +323,7 @@ Each layer has a typed error enum implementing `std::error::Error`:
 | --- | --- |
 | `FrameError` | `DimensionsOverflow`, `PixelBufferSizeMismatch` |
 | `FrameSourceError` | `Io`, `Decoding`, `RegionOutOfBounds`, `InvalidColor` |
+| `ScreenshotError` | `Enumeration`, `UnknownSource`, `Capture`, `InvalidDimensions`, `BufferSizeOverflow`, `Frame` |
 | `RecognitionError` | `UnsupportedFrame`, `RecognitionFailed` |
 | `TranslationError` | `Unavailable`, `InvalidResponse` |
 | `RenderingError` | `RegionOutOfBounds`, `UnsupportedFrame`, `InvalidFrame`, `RenderingFailed` |
@@ -352,6 +358,7 @@ Coverage includes:
 - Argos Translate protocol parsing and Japanese to English translation,
 - context-aware block translation and line distribution for wide multi-line dialogs,
 - debug text wrapping, vertical stacking, and glyph scaling to fit frame bounds,
+- Windows screenshot BGRA to opaque RGBA conversion,
 - full Shadowrun CD source to OCR to translation pipeline over both detected frames,
 - full Shadowrun intro, street, and hospital dialog detection to OCR to translation to block-rendering pipelines,
 - SDL preview timeout behavior,
@@ -413,6 +420,7 @@ If backends require configurable paths, credentials, or tuning parameters, the c
 - `BlockTextRenderer` draws colored blocks; `SdlThreeTextRenderer` and the interactive application use SDL's fixed `8x8` ASCII debug font and fit translated text to the frame by wrapping and scaling.
 - Both SDL applications block their event loop while processing a dropped image.
 - Only PNG input is supported.
+- `WindowsScreenshoter` is Windows-only, identifies sources by visible window title, and relies on GDI capture, so windows that reject `PrintWindow` may fall back to on-screen pixels.
 - Frames are processed synchronously and fully in memory.
 - `ApplicationConfig` supports implementation selection plus frame detector colors.
 - `ProceduralFramesDetectorSourcer` matches the configured background and text color arrays within fixed channel tolerances and uses fixed detection thresholds.
